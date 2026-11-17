@@ -1,7 +1,8 @@
 # NEON BAY — Open World Crime
 
-[![make.fun bounty](https://img.shields.io/badge/make.fun-bounty-gta6--01-ff5e78)](https://make.fun/bounty/gta6-01)
-[![entry](https://img.shields.io/badge/entry-NEON%20BAY-ff9f1c)](https://make.fun/bounty/gta6-01)
+[![make.fun · gta6-01](https://make.fun/badge/gta6-01.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
+[![rank](https://make.fun/badge/gta6-01/Indodegen/neon-bay-open-world/rank.svg)](https://make.fun/bounty/gta6-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
+[![reward](https://make.fun/badge/gta6-01/Indodegen/neon-bay-open-world/reward.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
 [![license](https://img.shields.io/badge/license-MIT-7dff9b)](./LICENSE)
 
 **NEON BAY** is an original open-world crime game set in Coral Bay, a sun-soaked coastal city of neon, palm trees and bad decisions. You are **Jax Marlow**, a wheelman fresh out of lockup, working for fixer **Rosa Vega**: steal fast cars, outrun the Coral Bay PD, and climb from street hustler to king of the bay.

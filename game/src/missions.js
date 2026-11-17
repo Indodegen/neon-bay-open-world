@@ -1,256 +1,173 @@
-// missions.js — The story of NEON BAY: five jobs for Vera Solano, each one
-// a different kind of driving. Every mission is a list of steps; the manager
-// watches the player, advances the steps, and pays out at the end.
-import { WORLD } from './config.js';
+// NEON BAY — missions.js
+// Eight story missions for the fixer Vera Solano. Each mission is a chain of
+// stages — drive to a marker, pick up a package, deliver it, lose the cops,
+// ram a target — with a briefing, an objective line on the HUD, and a cash
+// payout. Completing one unlocks the next, autosaves, and plays the jingle.
+// Missions use the city's real landmarks so the minimap and the off-screen
+// objective arrow always point somewhere the player can actually drive to.
 
-// Step kinds:
-//   steal      — get into any car
-//   goto       — reach a point (optionally in a car)
-//   timed      — reach a point before the clock runs out
-//   hold       — stand in a zone for a few seconds
-//   loseWanted — get the wanted level back to zero
-function missionList(city) {
-  const L = city.landmarks;
-  return [
-    {
-      id: 'first-wheels',
-      title: '1 · FIRST WHEELS',
-      name: 'First Wheels',
-      reward: 400,
-      briefing: 'Vera Solano runs this town\'s jobs, and she needs a driver. "Borrow" any car on the street and bring it to Sunset Garage. Try not to let the cops see you take it.',
-      steps: [
-        { kind: 'steal', text: 'Steal any car (walk up and press E)' },
-        { kind: 'goto', x: L.garage.x, y: L.garage.y, radius: 90, requireCar: true, text: 'Drive the car to Sunset Garage' },
-      ],
-    },
-    {
-      id: 'sunset-courier',
-      title: '2 · SUNSET COURIER',
-      name: 'Sunset Courier',
-      reward: 650,
-      briefing: 'A package for the island. The bridge is the only way across Coral Bay, and the client pays extra if you beat the sunset — 90 seconds, wheels up.',
-      steps: [
-        { kind: 'goto', x: L.market.x, y: L.market.y, radius: 80, requireCar: true, text: 'Pick up the package at the Night Market' },
-        { kind: 'timed', x: L.safehouse.x, y: L.safehouse.y, radius: 110, requireCar: true, timeLimit: 90, text: 'Deliver across the Coral Bridge — beat the clock!' },
-      ],
-    },
-    {
-      id: 'night-shift',
-      title: '3 · NIGHT SHIFT',
-      name: 'Night Shift',
-      reward: 950,
-      briefing: 'The club crowd pays in cash and tips in gossip. Three fares, three corners of the city. Keep the meter running and the paint un-scratched.',
-      steps: [
-        { kind: 'goto', x: 900, y: 700, radius: 70, requireCar: true, text: 'Pick up fare 1/3 — Marlin & 2nd' },
-        { kind: 'goto', x: 2800, y: 700, radius: 70, requireCar: true, text: 'Drop off fare 1/3 — East Gate' },
-        { kind: 'goto', x: 2400, y: 1900, radius: 70, requireCar: true, text: 'Pick up fare 2/3 — Market Row' },
-        { kind: 'goto', x: 800, y: 1900, radius: 70, requireCar: true, text: 'Drop off fare 2/3 — Beachfront' },
-        { kind: 'goto', x: 1200, y: 1500, radius: 70, requireCar: true, text: 'Pick up fare 3/3 — Downtown' },
-        { kind: 'goto', x: 2000, y: 300, radius: 70, requireCar: true, text: 'Drop off fare 3/3 — North Pier Road' },
-      ],
-    },
-    {
-      id: 'heat-run',
-      title: '4 · HEAT RUN',
-      name: 'Heat Run',
-      reward: 1200,
-      briefing: 'Somebody talked. The NBPD has your plate and your face. Lose the tail — stay out of sight until the heat dies — then slip home to the safehouse on Coral Isle.',
-      steps: [
-        { kind: 'loseWanted', text: 'Lose the cops — stay out of sight until the stars fade' },
-        { kind: 'goto', x: L.safehouse.x, y: L.safehouse.y, radius: 110, text: 'Reach the safehouse on Coral Isle' },
-      ],
-    },
-    {
-      id: 'coral-heist',
-      title: '5 · THE CORAL HEIST',
-      name: 'The Coral Heist',
-      reward: 3000,
-      briefing: 'The big one. Coral Bank keeps its cash behind a vault door that takes six seconds to crack. Walk in on foot, crack it, grab the money — then outrun a four-star response to the island. This is the job that makes you a legend of Neon Bay.',
-      steps: [
-        { kind: 'goto', x: L.bank.x, y: L.bank.y, radius: 80, requireCar: false, onFoot: true, text: 'Reach Coral Bank — on foot, no car' },
-        { kind: 'hold', x: L.bank.x, y: L.bank.y, radius: 60, holdSeconds: 6, onFoot: true, text: 'Crack the vault — stay inside the bank!' },
-        { kind: 'goto', x: L.safehouse.x, y: L.safehouse.y, radius: 110, text: 'Escape to the safehouse — the whole city is after you!' },
-      ],
-    },
-  ];
+export const MISSIONS = [
+  {
+    id: 1, title: 'First Fare', payout: 400,
+    briefing: 'Vera Solano: "Kid, you want work in Neon Bay? Prove it. Pick up my package at Sunset Pier and bring it to the Neon Strip. No cops, no dents — my clients pay for clean."',
+    stages: [
+      { kind: 'goto', x: 3930, y: 2050, label: 'Pick up the package at Sunset Pier', landmark: 'pier' },
+      { kind: 'deliver', x: 960, y: 1560, label: 'Deliver the package to the Neon Strip', landmark: 'strip' },
+    ],
+  },
+  {
+    id: 2, title: 'The Luna Job', payout: 650,
+    briefing: 'Vera: "The Luna Casino skimmed my cut. Go to the casino, grab the cash bag from the back door, and drop it at my office. Fast feet, faster car."',
+    stages: [
+      { kind: 'goto', x: 960, y: 2360, label: 'Grab the cash bag at Luna Casino', landmark: 'casino' },
+      { kind: 'deliver', x: 960, y: 1860, label: 'Drop the bag at Vera\'s Office', landmark: 'veraOffice' },
+    ],
+  },
+  {
+    id: 3, title: 'Hot Wheels', payout: 800,
+    briefing: 'Vera: "A client wants a Vortex GT, no questions. Steal the sportscar parked by the Marina Dock and bring it to Rico\'s Garage. The cops will not like it. I do not care."',
+    stages: [
+      { kind: 'steal', x: 3360, y: 1560, label: 'Steal the Vortex GT at Marina Dock', landmark: 'marinaDock' },
+      { kind: 'deliver', x: 2760, y: 1860, label: 'Deliver the Vortex GT to Rico\'s Garage', landmark: 'garage', needCar: 'sport' },
+    ],
+  },
+  {
+    id: 4, title: 'Bay Run', payout: 950,
+    briefing: 'Vera: "The Isla Verde Resort needs a delivery and the bridge is the only way over. Take the package across the bridge to the island. Do not stop. Do not look down."',
+    stages: [
+      { kind: 'goto', x: 3360, y: 1560, label: 'Collect the resort package at Marina Dock', landmark: 'marinaDock' },
+      { kind: 'deliver', x: 4340, y: 770, label: 'Cross the bridge — deliver to Isla Verde Resort', landmark: 'islandResort' },
+    ],
+  },
+  {
+    id: 5, title: 'Heat Wave', payout: 1200,
+    briefing: 'Vera: "You made the NBPD list, kid. Lose a 2-star wanted level, then meet me at the pier. If you bring the heat with you, the deal is off."',
+    stages: [
+      { kind: 'escape', x: 3930, y: 2050, label: 'Lose the cops (drop to 0 stars), then reach Sunset Pier', landmark: 'pier', needStars: 0 },
+    ],
+  },
+  {
+    id: 6, title: 'The Informant', payout: 1500,
+    briefing: 'Vera: "An informant is talking at Coral General. Shut him up — drive your car into his ride outside the hospital and make sure he remembers who runs this bay."',
+    stages: [
+      { kind: 'ram', x: 1560, y: 860, label: 'Ram the informant\'s car outside Coral General', landmark: 'hospital' },
+      { kind: 'deliver', x: 960, y: 1860, label: 'Report back to Vera\'s Office', landmark: 'veraOffice' },
+    ],
+  },
+  {
+    id: 7, title: 'Airfield Run', payout: 2000,
+    briefing: 'Vera: "A plane lands at Bay Airfield at midnight with my cargo. Pick it up and get it to the Old Port warehouse before the NBPD sets up roadblocks. This one pays real money."',
+    stages: [
+      { kind: 'goto', x: 960, y: 2860, label: 'Pick up the cargo at Bay Airfield', landmark: 'airport' },
+      { kind: 'deliver', x: 960, y: 2560, label: 'Deliver the cargo to the Old Port', landmark: 'port' },
+    ],
+  },
+  {
+    id: 8, title: 'Queen of the Bay', payout: 2500,
+    briefing: 'Vera: "Last job, kid. The whole city is watching. Take the tribute from the casino to the island resort, lose any tail, and Neon Bay is ours. Make me proud."',
+    stages: [
+      { kind: 'goto', x: 960, y: 2360, label: 'Collect the tribute at Luna Casino', landmark: 'casino' },
+      { kind: 'deliver', x: 4340, y: 770, label: 'Deliver the tribute to Isla Verde Resort', landmark: 'islandResort' },
+    ],
+  },
+];
+
+export function missionByIndex(i) {
+  return MISSIONS[Math.min(i, MISSIONS.length - 1)];
 }
 
-export class Missions {
-  constructor(city) {
-    this.city = city;
-    this.list = missionList(city);
-    this.index = 0; // next mission to play
-    this.active = null;
-    this.stepIndex = 0;
-    this.stepTimer = 0;
-    this.holdTimer = 0;
-    this.completedCount = 0;
-    this.storyDone = false;
-  }
+export function startMissionState(game, index) {
+  const m = missionByIndex(index);
+  game.mission = m;
+  game.missionStage = 0;
+  game.missionIndex = index;
+  game.missionActive = true;
+  game.missionTarget = null;
+  game.showBriefing(m);
+  return m;
+}
 
-  get current() {
-    return this.active;
-  }
+export function currentStage(game) {
+  if (!game.missionActive || !game.mission) return null;
+  return game.mission.stages[game.missionStage] || null;
+}
 
-  get currentStep() {
-    if (!this.active) return null;
-    return this.active.steps[this.stepIndex] || null;
-  }
+export function stageTarget(game) {
+  const s = currentStage(game);
+  if (!s) return null;
+  return { x: s.x, y: s.y, label: s.label, kind: s.kind };
+}
 
-  get nextMission() {
-    return this.list[this.index] || null;
-  }
+// Called every frame; returns 'complete' | 'stage' | null.
+export function updateMission(game, dt) {
+  const s = currentStage(game);
+  if (!s) return null;
+  const p = game.player;
+  const d = Math.hypot(p.x - s.x, p.y - s.y);
+  const inCar = !!game.playerCar;
 
-  start(index, game) {
-    const mission = this.list[index];
-    if (!mission) return null;
-    this.active = mission;
-    this.stepIndex = 0;
-    this.stepTimer = 0;
-    this.holdTimer = 0;
-    this.applyStepSetup(mission.steps[0], game);
-    return mission;
-  }
-
-  applyStepSetup(step, game) {
-    if (!step || !game) return;
-    if (step.kind === 'loseWanted') {
-      game.police.setWanted(2);
-    }
-    if (this.active && this.active.id === 'coral-heist' && step.kind === 'goto' && this.stepIndex === 2) {
-      game.police.setWanted(4);
-    }
-    this.stepTimer = step.timeLimit || 0;
-    this.holdTimer = 0;
-  }
-
-  fail() {
-    const mission = this.active;
-    this.active = null;
-    this.stepIndex = 0;
-    return mission;
-  }
-
-  // Returns an event object when something notable happens, else null.
-  update(dt, game) {
-    if (!this.active) return null;
-    const step = this.currentStep;
-    if (!step) return null;
-    const player = game.player;
-
-    if (step.kind === 'steal') {
-      if (player.inCar) return this.advance(game);
-      return null;
-    }
-
-    if (step.kind === 'loseWanted') {
-      if (game.police.wanted === 0) return this.advance(game);
-      return null;
-    }
-
-    if (step.kind === 'timed') {
-      this.stepTimer -= dt;
-      if (this.stepTimer <= 0) return { event: 'fail', reason: 'Out of time — the client walked.' };
-    }
-
-    if (step.kind === 'hold') {
-      const d = Math.hypot(player.x - step.x, player.y - step.y);
-      const inZone = d < step.radius && (!step.onFoot || !player.inCar);
-      if (inZone) {
-        this.holdTimer += dt;
-        if (this.holdTimer >= step.holdSeconds) return this.advance(game);
-      } else {
-        this.holdTimer = Math.max(0, this.holdTimer - dt * 2);
-      }
-      return null;
-    }
-
-    // goto / timed arrival.
-    const d = Math.hypot(player.x - step.x, player.y - step.y);
-    const modeOk = step.onFoot ? !player.inCar : step.requireCar ? player.inCar : true;
-    if (d < step.radius && modeOk) {
-      return this.advance(game);
+  if (s.kind === 'steal') {
+    // Complete when the player is driving any sportscar near the marker.
+    if (inCar && game.playerCar.type === 'sport' && d < 220) return advanceStage(game);
+    if (d < 120 && !inCar) {
+      game.hint('Steal a Vortex GT nearby — press E next to a sportscar', 2);
     }
     return null;
   }
-
-  advance(game) {
-    this.stepIndex++;
-    this.holdTimer = 0;
-    if (this.stepIndex >= this.active.steps.length) {
-      const done = this.active;
-      this.active = null;
-      this.completedCount++;
-      this.index++;
-      if (this.index >= this.list.length) this.storyDone = true;
-      return { event: 'complete', mission: done };
-    }
-    const step = this.currentStep;
-    this.applyStepSetup(step, game);
-    return { event: 'step', mission: this.active, step };
-  }
-
-  objectiveText() {
-    if (!this.active) {
-      if (this.storyDone) return 'Story complete — Neon Bay is yours. Free roam!';
-      const next = this.nextMission;
-      return next ? `Next job: ${next.title} — drive to the yellow marker to start` : 'Free roam — explore Neon Bay';
-    }
-    const step = this.currentStep;
-    if (!step) return this.active.title;
-    let text = `${this.active.title}: ${step.text}`;
-    if (step.kind === 'timed') text += ` — ${Math.max(0, Math.ceil(this.stepTimer))}s`;
-    if (step.kind === 'hold' && this.holdTimer > 0) {
-      text += ` — ${Math.max(0, step.holdSeconds - this.holdTimer).toFixed(1)}s`;
-    }
-    return text;
-  }
-
-  // Where the player should drive: the active step, or the next job's start.
-  target() {
-    if (this.active && this.currentStep) {
-      const step = this.currentStep;
-      if (step.x !== undefined) return { x: step.x, y: step.y, label: 'MISSION' };
-    }
-    if (!this.active && this.nextMission) {
-      const first = this.nextMission.steps[0];
-      if (first.kind === 'steal') return { x: this.city.landmarks.garage.x, y: this.city.landmarks.garage.y, label: 'NEXT JOB' };
-      if (first.x !== undefined) return { x: first.x, y: first.y, label: 'NEXT JOB' };
+  if (s.kind === 'escape') {
+    if (game.wantedStars === 0 && d < 130) return advanceStage(game);
+    if (game.wantedStars > 0 && d < 130) {
+      game.hint('Lose the cops first — wanted level must be 0 stars', 2);
     }
     return null;
   }
-
-  // The pulsing beacon over the current objective, drawn in world space.
-  drawMarker(ctx, time) {
-    const target = this.target();
-    if (!target) return;
-    const pulse = 1 + Math.sin(time * 4) * 0.15;
-    ctx.save();
-    ctx.translate(target.x, target.y);
-    ctx.strokeStyle = 'rgba(255, 211, 25, 0.9)';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.arc(0, 0, 34 * pulse, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.strokeStyle = 'rgba(255, 211, 25, 0.35)';
-    ctx.beginPath();
-    ctx.arc(0, 0, 52 * pulse, 0, Math.PI * 2);
-    ctx.stroke();
-    // Downward arrow beacon.
-    const bob = Math.sin(time * 3) * 6;
-    ctx.fillStyle = '#ffd319';
-    ctx.beginPath();
-    ctx.moveTo(0, -66 + bob);
-    ctx.lineTo(-11, -84 + bob);
-    ctx.lineTo(11, -84 + bob);
-    ctx.closePath();
-    ctx.fill();
-    ctx.font = 'bold 13px Arial, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillStyle = '#ffd319';
-    ctx.fillText(target.label, 0, -92 + bob);
-    ctx.restore();
+  if (s.kind === 'ram') {
+    // The target car waits by the hospital; ramming it at speed completes.
+    if (!game.missionTarget) {
+      game.spawnMissionTarget(s.x, s.y);
+    }
+    const t = game.missionTarget;
+    if (t && inCar && Math.abs(game.playerCar.speed) > 140 &&
+        Math.hypot(game.playerCar.x - t.x, game.playerCar.y - t.y) < 60) {
+      game.damageMissionTarget(120);
+      return advanceStage(game);
+    }
+    return null;
   }
+  // goto / deliver: reach the marker (deliver prefers a car, but on foot counts).
+  const radius = s.kind === 'deliver' ? 110 : 120;
+  if (d < radius) return advanceStage(game);
+  return null;
 }
 
-export { WORLD };
+export function advanceStage(game) {
+  game.missionStage++;
+  if (game.audio) game.audio.pickup();
+  if (game.missionStage >= game.mission.stages.length) {
+    completeMission(game);
+    return 'complete';
+  }
+  const next = currentStage(game);
+  game.flashMessage('OBJECTIVE: ' + next.label, '#ffe600');
+  return 'stage';
+}
+
+export function completeMission(game) {
+  const m = game.mission;
+  game.money += m.payout;
+  game.totalEarned += m.payout;
+  game.completedMissions.push(m.id);
+  game.missionActive = false;
+  game.mission = null;
+  game.missionStage = 0;
+  game.missionTarget = null;
+  if (game.audio) game.audio.missionJingle();
+  game.flashMessage('MISSION COMPLETE — ' + m.title + '  +' + '$' + m.payout, '#7cff00');
+  game.showMissionComplete(m);
+  game.autosave();
+  // Next mission unlocks; the player starts it from the pause menu or by
+  // driving to Vera's office marker.
+  if (game.missionIndex < MISSIONS.length - 1) {
+    game.missionIndex++;
+  }
+}

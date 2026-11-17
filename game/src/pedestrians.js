@@ -1,177 +1,116 @@
-// pedestrians.js — The people of Neon Bay: they stroll the sidewalks, cross
-// the streets, and run for their lives when shots ring out or cars mount
-// the curb. They are also the witnesses that call the cops on a car thief.
-import { Rng } from './random.js';
-import { randomSidewalkPoint, resolveCollision, isRoad } from './city.js';
-import { WORLD } from './config.js';
+// NEON BAY — pedestrians.js
+// Pedestrians with varied behaviour: strollers, joggers, phone-starers,
+// window shoppers and panickers who flee gunshots and explosions. They walk
+// the sidewalks, cross at intersections, and react to the player — a living
+// city, not decoration. Hitting one is a crime the police notice.
 
-const PED_COUNT = 30;
-const SHIRT_COLORS = ['#ff6b81', '#4ecdc4', '#ffe66d', '#a78bfa', '#ff9f43', '#54a0ff', '#fd79a8', '#00cec9', '#e17055', '#fdcb6e'];
-const SKIN_COLORS = ['#f1c27d', '#e0ac69', '#c68642', '#8d5524', '#ffdbac'];
+import { clamp, dist, mulberry32, pickRandom, randomRange } from './utils.js';
+import { ROAD_X, ROAD_Y, ROAD_W, WORLD_H, collideCircleWithCity } from './city.js';
 
-export class Pedestrians {
-  constructor(city) {
-    this.city = city;
-    this.rng = new Rng(4242);
-    this.list = [];
+const SKINS = ['#f2c79b', '#c98d5f', '#8a5a3b', '#f2d8b0', '#a06a42'];
+const SHIRTS = ['#ff5a5a', '#4f9ac9', '#7ac94f', '#ffe600', '#b967ff', '#ff6a00', '#e8e8e8', '#222831', '#00e5ff', '#ff2e88'];
+const PANTS = ['#222831', '#3a4a6b', '#6b5a3a', '#4a5540', '#c9c9c9'];
+
+export function makePed(id, rng, city) {
+  const onH = rng() < 0.5;
+  let x, y;
+  if (onH) {
+    const ry = ROAD_Y[Math.floor(rng() * ROAD_Y.length)];
+    y = ry + (rng() < 0.5 ? -ROAD_W / 2 - 16 : ROAD_W / 2 + 16);
+    x = randomRange(rng, 200, 3800);
+  } else {
+    const rx = ROAD_X[Math.floor(rng() * ROAD_X.length)];
+    x = rx + (rng() < 0.5 ? -ROAD_W / 2 - 16 : ROAD_W / 2 + 16);
+    y = randomRange(rng, 200, 3000);
   }
+  const behavior = pickRandom(rng, ['stroll', 'stroll', 'stroll', 'jog', 'phone', 'shop', 'stroll']);
+  return {
+    id, x, y, angle: rng() * Math.PI * 2,
+    speed: behavior === 'jog' ? randomRange(rng, 95, 130) : randomRange(rng, 34, 62),
+    behavior, state: 'walk', panic: 0, down: false, downTimer: 0,
+    skin: pickRandom(rng, SKINS), shirt: pickRandom(rng, SHIRTS), pants: pickRandom(rng, PANTS),
+    bobPhase: rng() * Math.PI * 2, idleTimer: randomRange(rng, 0, 6),
+    targetX: x, targetY: y,
+  };
+}
 
-  populate() {
-    for (let i = 0; i < PED_COUNT; i++) this.spawn(true);
-  }
+export function spawnPedestrians(city, rng, count) {
+  const peds = [];
+  for (let i = 0; i < count; i++) peds.push(makePed(5000 + i, rng, city));
+  return peds;
+}
 
-  spawn(anywhere) {
-    const spot = randomSidewalkPoint(this.city, this.rng);
-    const ped = {
-      x: spot.x,
-      y: spot.y,
-      angle: this.rng.range(0, Math.PI * 2),
-      speed: this.rng.range(38, 72),
-      hp: 30,
-      shirt: this.rng.pick(SHIRT_COLORS),
-      skin: this.rng.pick(SKIN_COLORS),
-      state: 'walk', // walk | flee | down | cross
-      fleeX: 0,
-      fleeY: 0,
-      fleeTimer: 0,
-      targetX: spot.x,
-      targetY: spot.y,
-      walkPhase: this.rng.range(0, Math.PI * 2),
-      retargetIn: this.rng.range(1, 4),
-      down: false,
-    };
-    this.pickNewTarget(ped);
-    this.list.push(ped);
-    return ped;
-  }
-
-  pickNewTarget(ped) {
-    const spot = randomSidewalkPoint(this.city, this.rng);
-    ped.targetX = spot.x;
-    ped.targetY = spot.y;
-    ped.retargetIn = this.rng.range(3, 9);
-  }
-
-  // A loud event (gunshot, crash, explosion) sends everyone nearby running.
-  scare(x, y, radius) {
-    for (const ped of this.list) {
-      if (ped.down) continue;
-      const d = Math.hypot(ped.x - x, ped.y - y);
-      if (d < radius) {
-        ped.state = 'flee';
-        const away = Math.atan2(ped.y - y, ped.x - x);
-        ped.fleeX = ped.x + Math.cos(away) * 320;
-        ped.fleeY = ped.y + Math.sin(away) * 320;
-        ped.fleeTimer = this.rng.range(2.5, 5);
-      }
+export function scarePeds(peds, x, y, radius) {
+  for (const p of peds) {
+    if (p.down) continue;
+    if (dist(p.x, p.y, x, y) < radius) {
+      p.state = 'panic';
+      p.panic = 2.5;
+      p.angle = Math.atan2(p.y - y, p.x - x);
     }
   }
+}
 
-  update(dt, time, playerPos, danger) {
-    if (this.list.length < PED_COUNT) this.spawn();
-    for (const ped of this.list) {
-      if (ped.down) continue;
-      ped.walkPhase += dt * (ped.state === 'flee' ? 14 : 7);
-      if (ped.state === 'flee') {
-        ped.fleeTimer -= dt;
-        const dx = ped.fleeX - ped.x;
-        const dy = ped.fleeY - ped.y;
-        const d = Math.hypot(dx, dy);
-        if (d > 12 && ped.fleeTimer > 0) {
-          ped.angle = Math.atan2(dy, dx);
-          ped.x += Math.cos(ped.angle) * 165 * dt;
-          ped.y += Math.sin(ped.angle) * 165 * dt;
-        } else {
-          ped.state = 'walk';
-          this.pickNewTarget(ped);
-        }
+export function updatePed(p, dt, city, danger) {
+  if (p.down) {
+    p.downTimer -= dt;
+    if (p.downTimer <= 0) {
+      p.down = false;
+      p.state = 'panic';
+      p.panic = 2;
+    }
+    return;
+  }
+  if (p.panic > 0) {
+    p.panic -= dt;
+    p.state = p.panic > 0 ? 'panic' : 'walk';
+  }
+  let speed = p.speed;
+  if (p.state === 'panic') speed = p.speed * 2.4;
+  if (p.behavior === 'phone' && p.state === 'walk') {
+    p.idleTimer -= dt;
+    if (p.idleTimer > 0) return; // standing still, staring at the phone
+    if (p.idleTimer < -8) p.idleTimer = randomRange(Math.random, 2, 6);
+  }
+  if (p.behavior === 'shop' && p.state === 'walk') {
+    p.idleTimer -= dt;
+    if (p.idleTimer > 0) return; // window shopping
+    if (p.idleTimer < -10) p.idleTimer = randomRange(Math.random, 3, 7);
+  }
+  // Wander: pick a new sidewalk target when close to the old one.
+  if (dist(p.x, p.y, p.targetX, p.targetY) < 24 || p.state === 'panic') {
+    if (p.state === 'panic') {
+      p.targetX = p.x + Math.cos(p.angle) * 300;
+      p.targetY = p.y + Math.sin(p.angle) * 300;
+    } else {
+      const onH = Math.random() < 0.5;
+      if (onH) {
+        const ry = ROAD_Y[Math.floor(Math.random() * ROAD_Y.length)];
+        p.targetY = ry + (Math.random() < 0.5 ? -ROAD_W / 2 - 16 : ROAD_W / 2 + 16);
+        p.targetX = clamp(p.x + randomRange(Math.random, -500, 500), 150, 3850);
       } else {
-        ped.retargetIn -= dt;
-        const dx = ped.targetX - ped.x;
-        const dy = ped.targetY - ped.y;
-        const d = Math.hypot(dx, dy);
-        if (d < 16 || ped.retargetIn <= 0) {
-          this.pickNewTarget(ped);
-        } else {
-          ped.angle = Math.atan2(dy, dx);
-          ped.x += Math.cos(ped.angle) * ped.speed * dt;
-          ped.y += Math.sin(ped.angle) * ped.speed * dt;
-        }
+        const rx = ROAD_X[Math.floor(Math.random() * ROAD_X.length)];
+        p.targetX = rx + (Math.random() < 0.5 ? -ROAD_W / 2 - 16 : ROAD_W / 2 + 16);
+        p.targetY = clamp(p.y + randomRange(Math.random, -500, 500), 150, WORLD_H - 150);
       }
-      // Stay out of buildings and water, and off the middle of the road
-      // unless they are crossing it.
-      resolveCollision(this.city, ped, 10);
-      if (isRoad(this.city, ped.x, ped.y) && ped.state !== 'flee') {
-        // Hurry across: double speed while on the asphalt.
-        ped.x += Math.cos(ped.angle) * ped.speed * dt;
-        ped.y += Math.sin(ped.angle) * ped.speed * dt;
-      }
-      ped.x = Math.max(30, Math.min(WORLD.width - 30, ped.x));
-      ped.y = Math.max(30, Math.min(WORLD.height - 30, ped.y));
     }
-    void time;
-    void playerPos;
-    void danger;
   }
+  const want = Math.atan2(p.targetY - p.y, p.targetX - p.x);
+  let diff = want - p.angle;
+  while (diff > Math.PI) diff -= Math.PI * 2;
+  while (diff < -Math.PI) diff += Math.PI * 2;
+  p.angle += clamp(diff, -3.2 * dt, 3.2 * dt);
+  const nx = p.x + Math.cos(p.angle) * speed * dt;
+  const ny = p.y + Math.sin(p.angle) * speed * dt;
+  const fixed = collideCircleWithCity(city, nx, ny, 10);
+  p.x = fixed.x;
+  p.y = fixed.y;
+  p.bobPhase += dt * (speed / 9);
+}
 
-  // The nearest pedestrian who can see a crime happen.
-  nearestWitness(x, y, radius) {
-    let best = null;
-    let bestDist = radius;
-    for (const ped of this.list) {
-      if (ped.down) continue;
-      const d = Math.hypot(ped.x - x, ped.y - y);
-      if (d < bestDist) {
-        best = ped;
-        bestDist = d;
-      }
-    }
-    return best;
-  }
-
-  draw(ctx, time, view) {
-    for (const ped of this.list) {
-      if (ped.x < view.x - 30 || ped.x > view.x + view.w + 30 || ped.y < view.y - 30 || ped.y > view.y + view.h + 30) continue;
-      ctx.save();
-      ctx.translate(ped.x, ped.y);
-      if (ped.down) {
-        // Lying flat after a bad day.
-        ctx.rotate(ped.angle + Math.PI / 2);
-        ctx.fillStyle = ped.shirt;
-        ctx.beginPath();
-        ctx.ellipse(0, 0, 13, 6, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = ped.skin;
-        ctx.beginPath();
-        ctx.arc(14, 0, 5, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-        continue;
-      }
-      const bob = Math.sin(ped.walkPhase) * 1.5;
-      ctx.rotate(ped.angle);
-      // Shadow.
-      ctx.fillStyle = 'rgba(8, 4, 18, 0.35)';
-      ctx.beginPath();
-      ctx.ellipse(0, 2, 10, 7, 0, 0, Math.PI * 2);
-      ctx.fill();
-      // Body and head, top-down.
-      ctx.fillStyle = ped.shirt;
-      ctx.beginPath();
-      ctx.arc(0, 0, 8, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = ped.skin;
-      ctx.beginPath();
-      ctx.arc(3, 0, 5, 0, Math.PI * 2);
-      ctx.fill();
-      // Walking feet.
-      ctx.fillStyle = '#1c1a26';
-      ctx.beginPath();
-      ctx.arc(-6, -4 + bob, 2.5, 0, Math.PI * 2);
-      ctx.arc(-6, 4 - bob, 2.5, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-    }
-    void time;
-  }
+export function knockPedDown(p, fromX, fromY) {
+  if (p.down) return;
+  p.down = true;
+  p.downTimer = 2.2;
+  p.angle = Math.atan2(p.y - fromY, p.x - fromX);
 }

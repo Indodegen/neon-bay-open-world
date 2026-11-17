@@ -1,146 +1,258 @@
-// player.js — Rex Marlowe on foot: walking, sprinting, punching, shooting,
-// and getting in and out of cars. Driving itself lives in vehicles.js.
-import { PLAYER } from './config.js';
-import { resolveCollision } from './city.js';
+// NEON BAY — player.js
+// The player on foot and behind the wheel: walking, sprinting, entering and
+// exiting cars (stealing them), punching, firing the pistol, taking damage,
+// and the busted / wasted respawn rules. The player is a person first —
+// the car is a tool they steal, drive, crash and abandon.
 
-export class Player {
-  constructor(x, y) {
-    this.x = x;
-    this.y = y;
-    this.angle = -Math.PI / 2;
-    this.aimAngle = -Math.PI / 2;
-    this.health = PLAYER.maxHealth;
-    this.armor = 0;
-    this.ammo = PLAYER.pistolAmmo;
-    this.ammoReserve = 96;
-    this.inCar = false;
-    this.car = null;
-    this.punchCooldown = 0;
-    this.shootCooldown = 0;
-    this.reloadTimer = 0;
-    this.invulnerableTimer = 0;
-    this.walkPhase = 0;
-    this.moving = false;
-    this.dead = false;
+import { clamp, dist, angleDiff } from './utils.js';
+import { collideCircleWithCity } from './city.js';
+import { damageCar } from './vehicles.js';
+import { addHeat } from './police.js';
+
+export function makePlayer(x, y) {
+  return {
+    x, y, angle: -Math.PI / 2, speed: 0,
+    health: 100, maxHealth: 100,
+    walkSpeed: 205, sprintSpeed: 330,
+    punchCooldown: 0, shootCooldown: 0, hurtTimer: 0,
+    skin: '#f2c79b', shirt: '#ff2e88', pants: '#222831', jacket: '#1c2333',
+    bobPhase: 0, moving: false,
+  };
+}
+
+export function updatePlayerOnFoot(game, dt) {
+  const p = game.player;
+  const input = game.input;
+  const mx = input.moveX();
+  const my = input.moveY();
+  const sprint = input.down('shift');
+  const speed = sprint ? p.sprintSpeed : p.walkSpeed;
+  p.moving = mx !== 0 || my !== 0;
+  if (p.moving) {
+    const len = Math.hypot(mx, my);
+    const vx = (mx / len) * speed;
+    const vy = (my / len) * speed;
+    const nx = p.x + vx * dt;
+    const ny = p.y + vy * dt;
+    const fixed = collideCircleWithCity(game.city, nx, ny, 13);
+    p.x = fixed.x;
+    p.y = fixed.y;
+    p.angle = Math.atan2(vy, vx);
+    p.bobPhase += dt * (speed / 11);
   }
-
-  get speed() {
-    return this.inCar && this.car ? Math.abs(this.car.speed) : 0;
+  // Aim at the mouse when shooting is possible.
+  if (input.mouseDown || game.aiming) {
+    const w = game.mouseWorld();
+    p.angle = Math.atan2(w.y - p.y, w.x - p.x);
   }
+  p.punchCooldown -= dt;
+  p.shootCooldown -= dt;
+  p.hurtTimer -= dt;
 
-  takeDamage(amount) {
-    if (this.invulnerableTimer > 0 || this.dead) return;
-    let remaining = amount;
-    if (this.armor > 0) {
-      const absorbed = Math.min(this.armor, remaining * 0.7);
-      this.armor -= absorbed;
-      remaining -= absorbed;
+  // Punch: short range, knocks peds and officers down.
+  if (input.justPressed(' ') && !game.playerCar) {
+    tryPunch(game);
+  }
+  // Shoot: mouse click fires the pistol toward the cursor.
+  if (input.mouseDown && p.shootCooldown <= 0 && !game.playerCar) {
+    firePistol(game);
+  }
+  // Enter the nearest car.
+  if (input.justPressed('e')) {
+    tryEnterCar(game);
+  }
+}
+
+export function tryPunch(game) {
+  const p = game.player;
+  if (p.punchCooldown > 0) return;
+  p.punchCooldown = 0.45;
+  if (game.audio) game.audio.punch();
+  const reach = 46;
+  const tx = p.x + Math.cos(p.angle) * reach;
+  const ty = p.y + Math.sin(p.angle) * reach;
+  game.punchFx = { x: tx, y: ty, t: 0.18 };
+  for (const ped of game.peds) {
+    if (!ped.down && dist(ped.x, ped.y, tx, ty) < 34) {
+      game.knockPed(ped);
+      addHeat(game, 12, 'Assault');
     }
-    this.health -= remaining;
-    this.invulnerableTimer = 0.35;
-    if (this.health <= 0) {
-      this.health = 0;
-      this.dead = true;
-    }
   }
-
-  heal(amount) {
-    this.health = Math.min(PLAYER.maxHealth, this.health + amount);
-  }
-
-  addArmor(amount) {
-    this.armor = Math.min(PLAYER.maxArmor, this.armor + amount);
-  }
-
-  update(dt, input, city, aimWorld) {
-    this.punchCooldown = Math.max(0, this.punchCooldown - dt);
-    this.shootCooldown = Math.max(0, this.shootCooldown - dt);
-    this.invulnerableTimer = Math.max(0, this.invulnerableTimer - dt);
-    if (this.reloadTimer > 0) {
-      this.reloadTimer -= dt;
-      if (this.reloadTimer <= 0) {
-        const needed = PLAYER.pistolAmmo - this.ammo;
-        const taken = Math.min(needed, this.ammoReserve);
-        this.ammo += taken;
-        this.ammoReserve -= taken;
+  for (const cop of game.cops) {
+    if (cop.kind === 'officer' && dist(cop.x, cop.y, tx, ty) < 36) {
+      cop.health -= 34;
+      addHeat(game, 20, 'Assaulting an officer');
+      if (cop.health <= 0) {
+        cop.down = true;
+        game.cops = game.cops.filter((c) => c !== cop);
+        game.flashMessage('Officer down — the NBPD will remember that', '#ff3860');
+        addHeat(game, 35, 'Officer down');
       }
     }
-    if (this.inCar) return;
-    this.aimAngle = aimWorld ? Math.atan2(aimWorld.y - this.y, aimWorld.x - this.x) : this.angle;
-
-    const moveX = input.axis('KeyA', 'KeyD') + input.axis('ArrowLeft', 'ArrowRight');
-    const moveY = input.axis('KeyW', 'KeyS') + input.axis('ArrowUp', 'ArrowDown');
-    const sprinting = input.isDown('ShiftLeft') || input.isDown('ShiftRight');
-    const speed = sprinting ? PLAYER.sprintSpeed : PLAYER.walkSpeed;
-    this.moving = moveX !== 0 || moveY !== 0;
-    if (this.moving) {
-      const len = Math.hypot(moveX, moveY) || 1;
-      this.x += (moveX / len) * speed * dt;
-      this.y += (moveY / len) * speed * dt;
-      this.angle = Math.atan2(moveY, moveX);
-      this.walkPhase += dt * (sprinting ? 13 : 9);
-    }
-    resolveCollision(city, this, PLAYER.radius);
   }
-
-  startReload() {
-    if (this.reloadTimer > 0 || this.ammo >= PLAYER.pistolAmmo || this.ammoReserve <= 0) return false;
-    this.reloadTimer = PLAYER.reloadTime;
-    return true;
-  }
-
-  // Drawn top-down: shoulders, head, and the pistol when armed.
-  draw(ctx, time) {
-    if (this.inCar) return;
-    ctx.save();
-    ctx.translate(this.x, this.y);
-    const bob = this.moving ? Math.sin(this.walkPhase) * 1.5 : 0;
-    // Soft white ring so the player reads at a glance, even shrunk.
-    ctx.strokeStyle = 'rgba(255, 246, 236, 0.55)';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(0, 0, 15, 0, Math.PI * 2);
-    ctx.stroke();
-    // Shadow.
-    ctx.fillStyle = 'rgba(8, 4, 18, 0.4)';
-    ctx.beginPath();
-    ctx.ellipse(1, 3, 12, 8, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.rotate(this.aimAngle);
-    // Jacket.
-    ctx.fillStyle = '#ff2e88';
-    ctx.beginPath();
-    ctx.arc(0, 0, 11, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#1c1a26';
-    ctx.fillRect(-2, -11, 8, 22);
-    // Head.
-    ctx.fillStyle = '#f1c27d';
-    ctx.beginPath();
-    ctx.arc(4, 0, 6.5, 0, Math.PI * 2);
-    ctx.fill();
-    // Hair.
-    ctx.fillStyle = '#241a12';
-    ctx.beginPath();
-    ctx.arc(2, 0, 6.5, Math.PI * 0.5, Math.PI * 1.5);
-    ctx.fill();
-    // Pistol in hand, pointing where the mouse aims.
-    ctx.fillStyle = '#22222e';
-    ctx.fillRect(8, -2, 12, 4);
-    // Muzzle flash glow right after a shot.
-    if (this.shootCooldown > PLAYER.pistolCooldown - 0.06) {
-      ctx.fillStyle = 'rgba(255, 211, 25, 0.9)';
-      ctx.beginPath();
-      ctx.arc(22, 0, 6 + Math.random() * 3, 0, Math.PI * 2);
-      ctx.fill();
+  for (const car of game.vehicles) {
+    if (!car.dead && dist(car.x, car.y, tx, ty) < 44) {
+      damageCar(car, 6, game);
     }
-    // Feet while walking.
-    ctx.fillStyle = '#e8e8f0';
-    ctx.beginPath();
-    ctx.arc(-8, -5 + bob, 3, 0, Math.PI * 2);
-    ctx.arc(-8, 5 - bob, 3, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-    void time;
+  }
+}
+
+export function firePistol(game) {
+  const p = game.player;
+  p.shootCooldown = 0.28;
+  if (game.audio) game.audio.gunshot();
+  const w = game.mouseWorld();
+  const angle = Math.atan2(w.y - p.y, w.x - p.x);
+  game.bullets.push({
+    x: p.x + Math.cos(angle) * 22, y: p.y + Math.sin(angle) * 22,
+    vx: Math.cos(angle) * 900, vy: Math.sin(angle) * 900, life: 0.7, fromPlayer: true,
+  });
+  game.muzzleFx = { x: p.x + Math.cos(angle) * 26, y: p.y + Math.sin(angle) * 26, t: 0.07 };
+  addHeat(game, 4, 'Shots fired');
+  game.scareNearby(p.x, p.y, 420);
+}
+
+export function updateBullets(game, dt) {
+  for (const b of game.bullets) {
+    b.x += b.vx * dt;
+    b.y += b.vy * dt;
+    b.life -= dt;
+    // Hit a pedestrian.
+    for (const ped of game.peds) {
+      if (!ped.down && dist(ped.x, ped.y, b.x, b.y) < 16) {
+        game.knockPed(ped);
+        b.life = 0;
+        addHeat(game, 18, 'Shooting a pedestrian');
+        break;
+      }
+    }
+    if (b.life <= 0) continue;
+    // Hit an officer.
+    for (const cop of game.cops) {
+      if (cop.kind === 'officer' && dist(cop.x, cop.y, b.x, b.y) < 18) {
+        cop.health -= 34;
+        b.life = 0;
+        addHeat(game, 15, 'Shooting at police');
+        if (cop.health <= 0) {
+          game.cops = game.cops.filter((c) => c !== cop);
+          addHeat(game, 35, 'Officer down');
+        }
+        break;
+      }
+    }
+    if (b.life <= 0) continue;
+    // Hit a car.
+    for (const car of game.vehicles) {
+      if (!car.dead && dist(car.x, car.y, b.x, b.y) < 30) {
+        damageCar(car, 12, game);
+        b.life = 0;
+        if (car.police) addHeat(game, 12, 'Shooting a cruiser');
+        break;
+      }
+    }
+    if (b.life <= 0) continue;
+    // Hit a building: spark.
+    if (game.city.buildings.some((bd) => b.x >= bd.x && b.x <= bd.x + bd.w && b.y >= bd.y && b.y <= bd.y + bd.h)) {
+      game.sparks.push({ x: b.x, y: b.y, t: 0.25 });
+      b.life = 0;
+    }
+  }
+  game.bullets = game.bullets.filter((b) => b.life > 0);
+}
+
+export function tryEnterCar(game) {
+  const p = game.player;
+  let best = null;
+  let bestD = 78;
+  for (const car of game.vehicles) {
+    if (car.dead) continue;
+    const d = dist(p.x, p.y, car.x, car.y);
+    if (d < bestD) { bestD = d; best = car; }
+  }
+  if (!best) return;
+  const wasTraffic = best.traffic;
+  const wasParked = best.parked;
+  game.playerCar = best;
+  best.parked = false;
+  best.driver = 'player';
+  p.x = best.x;
+  p.y = best.y;
+  if (wasTraffic) {
+    best.traffic = false;
+    addHeat(game, 25, 'Carjacking');
+    game.flashMessage('You stole the ' + best.name + '!', '#ffe600');
+  } else if (wasParked) {
+    addHeat(game, 25, 'Grand theft auto');
+    game.flashMessage('You stole the ' + best.name + '!', '#ffe600');
+  }
+  game.carsStolen++;
+  if (game.audio) game.audio.pickup();
+}
+
+export function exitCar(game) {
+  const p = game.player;
+  const car = game.playerCar;
+  if (!car) return;
+  const side = car.angle + Math.PI / 2;
+  const nx = car.x + Math.cos(side) * 40;
+  const ny = car.y + Math.sin(side) * 40;
+  const fixed = collideCircleWithCity(game.city, nx, ny, 13);
+  p.x = fixed.x;
+  p.y = fixed.y;
+  p.angle = car.angle;
+  car.speed = 0;
+  car.driver = null;
+  car.parked = true;
+  game.playerCar = null;
+}
+
+export function hurtPlayer(game, amount, cause) {
+  const p = game.player;
+  if (p.hurtTimer > 0 || game.state !== 'playing') return;
+  p.hurtTimer = 0.5;
+  p.health -= amount;
+  game.flashDamage();
+  if (p.health <= 0) {
+    p.health = 0;
+    game.wasted(cause || 'You were wasted');
+  }
+}
+
+export function checkCarPedCollisions(game, dt) {
+  const car = game.playerCar;
+  if (!car || car.dead) return;
+  for (const ped of game.peds) {
+    if (ped.down) continue;
+    if (dist(ped.x, ped.y, car.x, car.y) < 34 && Math.abs(car.speed) > 40) {
+      game.knockPed(ped);
+      addHeat(game, 8, 'Hit and run');
+      car.speed *= 0.82;
+      if (game.audio) game.audio.punch();
+    }
+  }
+  // Collide with other cars: damage both, sparks, and a possible near-miss.
+  for (const other of game.vehicles) {
+    if (other === car || other.dead) continue;
+    const d = dist(car.x, car.y, other.x, other.y);
+    if (d < 48) {
+      if (Math.abs(car.speed) > 120 || Math.abs(other.speed) > 120) {
+        const dmg = 4 + Math.abs(car.speed) / 100;
+        game.damagePlayerCar(dmg);
+        damageCar(other, dmg, game);
+        car.speed *= 0.45;
+        other.speed *= 0.5;
+        game.sparks.push({ x: (car.x + other.x) / 2, y: (car.y + other.y) / 2, t: 0.3 });
+        if (game.audio) game.audio.noiseHit(0.2, 0.3, 900);
+      } else {
+        // Gentle push apart — and shove the other car too, so a parked
+        // car is something you push out of the way, not a concrete wall.
+        const push = (48 - d) / 2;
+        const a = Math.atan2(car.y - other.y, car.x - other.x);
+        car.x += Math.cos(a) * push * 0.5;
+        car.y += Math.sin(a) * push * 0.5;
+        other.x -= Math.cos(a) * push * 0.5;
+        other.y -= Math.sin(a) * push * 0.5;
+      }
+    }
   }
 }

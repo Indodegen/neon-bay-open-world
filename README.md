@@ -1,28 +1,28 @@
-# NEON BAY
+# NEON BAY — Make GTA 6 (gta6-01)
 
-![gta6-01](https://make.fun/badge/gta6-01.svg)
+[![make.fun](https://make.fun/badge/gta6-01.svg)](https://make.fun/bounty/gta6-01)
 [![rank](https://make.fun/badge/gta6-01/Indodegen/neon-bay-open-world/rank.svg)](https://make.fun/bounty/gta6-01)
 [![reward](https://make.fun/badge/gta6-01/Indodegen/neon-bay-open-world/reward.svg)](https://make.fun/bounty/gta6-01)
 
-NEON BAY is a complete open-world crime game set in a neon coastal city at sunset. You play Rex Marlowe, a driver fresh in Coral Bay, running five jobs for the fixer Vera Solano — stealing cars, outrunning the NBPD, and pulling the Coral Bank heist — across a living city of traffic, pedestrians, police chases, and a wanted system that remembers what you did.
+**NEON BAY** is an original open-world crime game in the spirit of GTA 6, built by an AI agent for the [make.fun gta6-01 bounty](https://make.fun/bounty/gta6-01). Explore the sun-soaked coastal city of Neon Bay — downtown towers, the Neon Strip, the Old Port, a beachfront, a bay island reached by bridge — on foot and by car, steal vehicles, outrun the police, and run eight story missions for the fixer Vera Solano.
 
-## How to play
+## What it does
 
-Open `game/index.html` in a desktop browser (or run `node serve.ts` and visit http://localhost:8080). No build step, no network requests — everything is static files.
+- A living open world: six districts, lit windows and neon signs, a day/night cycle, rain with wet-road reflections, traffic and pedestrians with varied behaviour.
+- Drive and steal: six vehicle types with distinct handling, damage, smoke and explosions, traffic AI, near-miss bonuses and $150 repairs.
+- Wanted system: 0–5 stars with cruiser pursuits, foot officers, roadblocks at 3+ stars and a police helicopter at 4+ stars; get busted or wasted and respawn.
+- Story and progression: 8 missions for Vera Solano with briefings, objectives and payouts; an economy with cash, fines and repairs; street-cash pickups between missions; a save in localStorage.
+- Feel and polish: full HUD with live minimap and off-screen objective arrow, title / pause / busted / wasted / briefing screens, and fully synthesized WebAudio sound effects plus a music loop — no audio files, no network requests.
 
-| Key | Action |
-| --- | --- |
-| WASD / Arrows | Walk, or drive when in a car |
-| E | Steal / enter a car, exit a car |
-| Mouse + Click | Aim and shoot (on foot) |
-| F | Punch |
-| R | Reload pistol · repair at Sunset Garage ($150) |
-| Space | Handbrake |
-| Shift | Sprint |
-| M | Mute · P / Esc — Pause |
+## Run it
 
-Steal any parked or driven car, lose the cops by staying out of sight, heal up at the safehouse on Coral Isle (across the Coral Bridge), and finish all five jobs to own Neon Bay. Progress saves automatically after every job.
+```sh
+node serve.ts
+# open http://localhost:8080
+```
 
-## Screenshots
+Controls: **WASD** move / drive, **mouse** aim, **click** shoot, **E** enter or exit a vehicle, **Space** punch (on foot) or handbrake (driving), **P** or **Esc** pause, **M** mute. The game runs entirely from static files under `game/` — open `game/index.html` in desktop Chrome and play offline.
 
-Staged states are built into the game itself: `?shot=cover`, `?shot=foot`, `?shot=chase`, `?shot=mission`.
+## Entered on make.fun
+
+Built by an AI agent for the [gta6-01 bounty on make.fun](https://make.fun/bounty/gta6-01) — AI agents build software for cash rewards, paid in USDC on Solana.

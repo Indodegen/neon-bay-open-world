@@ -1,98 +1,231 @@
-// Cars: boxy low-poly builds with wheels, headlights and neon underglow. Driving is arcade physics.
-import * as THREE from 'three';
-import { makeRng, pick, range } from './random.js';
+// vehicles.js — Cars: what they are, how they drive, and how they look.
+// One Car object serves parked cars, traffic, police and the player's ride;
+// the physics here is the arcade handling the whole game shares.
+import { CAR_TYPES, CAR_COLORS } from './config.js';
+import { Rng } from './random.js';
+import { resolveCollision, isRoad, isWater } from './city.js';
 
-export const CAR_COLORS = [0xff4757, 0x2ed573, 0x1e90ff, 0xffa502, 0xeccc68, 0x70a1ff, 0x5352ed, 0xff6b81];
-export const CAR_NAMES = ['Sunset GT', 'Bay Cruiser', 'Palm Runner', 'Neon Coupe', 'Coral Sedan', 'Harbor Pickup'];
+let carIdCounter = 1;
 
-export function makeCarMesh(color, isPolice = false) {
-  const g = new THREE.Group();
-  const bodyMat = new THREE.MeshLambertMaterial({ color: isPolice ? 0x1a1a22 : color });
-  const body = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.62, 4.4), bodyMat);
-  body.position.y = 0.62; g.add(body);
-  const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.55, 2.1),
-    new THREE.MeshLambertMaterial({ color: 0x18202e }));
-  cabin.position.set(0, 1.18, -0.25); g.add(cabin);
-  const wheelMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
-  const wheels = [];
-  for (const [x, z] of [[-0.95, 1.45], [0.95, 1.45], [-0.95, -1.45], [0.95, -1.45]]) {
-    const w = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.36, 0.3, 10), wheelMat);
-    w.rotation.z = Math.PI / 2; w.position.set(x, 0.36, z); g.add(w); wheels.push(w);
-  }
-  const lightMat = new THREE.MeshBasicMaterial({ color: 0xfff2b0 });
-  for (const x of [-0.6, 0.6]) {
-    const l = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.18, 0.1), lightMat);
-    l.position.set(x, 0.7, 2.22); g.add(l);
-  }
-  if (isPolice) {
-    const bar = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.18, 0.4), new THREE.MeshBasicMaterial({ color: 0xff2222 }));
-    bar.position.set(0, 1.55, -0.25); g.add(bar);
-    const bar2 = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.18, 0.4), new THREE.MeshBasicMaterial({ color: 0x2244ff }));
-    bar2.position.set(0, 1.55, -0.25); bar2.position.z = 0.15; g.add(bar2);
-    g.userData.lightBar = [bar, bar2];
-    const stripe = new THREE.Mesh(new THREE.BoxGeometry(2.02, 0.2, 4.42), new THREE.MeshBasicMaterial({ color: 0xffffff }));
-    stripe.position.y = 0.85; g.add(stripe);
-  } else if (Math.random() < 0.5) {
-    const glow = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 4.8),
-      new THREE.MeshBasicMaterial({ color: 0xff2e88, transparent: true, opacity: 0.25 }));
-    glow.rotation.x = -Math.PI / 2; glow.position.y = 0.06; g.add(glow);
-  }
-  g.userData.wheels = wheels;
-  return g;
+export function createCar(type, x, y, angle, rng) {
+  const spec = CAR_TYPES[type] || CAR_TYPES.sedan;
+  const car = {
+    id: carIdCounter++,
+    type,
+    name: spec.name,
+    x, y,
+    angle,
+    speed: 0,
+    steer: 0,
+    hp: spec.hp,
+    maxHp: spec.hp,
+    color: type === 'taxi' ? '#ffd319' : type === 'police' ? '#e8ecf4' : (rng ? rng.pick(CAR_COLORS) : '#ff2e88'),
+    topSpeed: spec.topSpeed,
+    accel: spec.accel,
+    brake: spec.brake,
+    grip: spec.grip,
+    length: spec.length,
+    width: spec.width,
+    parked: false,
+    driver: null, // 'traffic' | 'police' | 'player' | null
+    dead: false,
+    burning: false,
+    brakeLights: false,
+    sirenPhase: 0,
+    honkCooldown: 0,
+    skidTimer: 0,
+  };
+  return car;
 }
 
-export class Car {
-  constructor(scene, x, z, angle, color, opts = {}) {
-    this.mesh = makeCarMesh(color, opts.police);
-    this.mesh.position.set(x, 0, z);
-    this.mesh.rotation.y = angle;
-    scene.add(this.mesh);
-    this.speed = 0; this.angle = angle;
-    this.maxSpeed = opts.maxSpeed ?? 34;
-    this.accel = opts.accel ?? 16;
-    this.police = !!opts.police;
-    this.name = opts.name ?? pick(makeRng((Math.random() * 1e9) | 0), CAR_NAMES);
-    this.stolen = false;
-    this.wheelSpin = 0;
+export function randomParkedCar(city, rng) {
+  const type = rng.pick(['sedan', 'sedan', 'sports', 'van', 'truck', 'taxi']);
+  // Parked along a road edge, facing along the road.
+  const vertical = rng.chance(0.5);
+  let x, y, angle;
+  if (vertical) {
+    const rx = rng.pick(city.roadsV);
+    x = rx + (rng.chance(0.5) ? -1 : 1) * 36;
+    y = rng.range(120, 2280);
+    angle = rng.chance(0.5) ? Math.PI / 2 : -Math.PI / 2;
+  } else {
+    const ry = rng.pick(city.roadsH);
+    x = rng.range(420, 3500);
+    y = ry + (rng.chance(0.5) ? -1 : 1) * 36;
+    angle = rng.chance(0.5) ? 0 : Math.PI;
   }
-  update(dt, input) {
-    // Arcade drive: W/S throttle, A/D steer (stronger at speed), Space handbrake.
-    const fwd = input.down ? 1 : input.up ? -0.55 : 0;
-    this.speed += fwd * this.accel * dt;
-    if (input.brake) this.speed *= Math.max(0, 1 - 3.2 * dt);
-    this.speed -= this.speed * 0.55 * dt; // drag
-    this.speed = Math.max(-12, Math.min(this.maxSpeed, this.speed));
-    if (Math.abs(this.speed) > 0.4) {
-      const steer = (input.left ? 1 : 0) - (input.right ? 1 : 0);
-      this.angle += steer * 1.9 * dt * Math.sign(this.speed) * Math.min(1, Math.abs(this.speed) / 10);
-    }
-    const vx = Math.sin(this.angle) * this.speed, vz = Math.cos(this.angle) * this.speed;
-    this.mesh.position.x += vx * dt;
-    this.mesh.position.z += vz * dt;
-    this.mesh.position.x = Math.max(-258, Math.min(292, this.mesh.position.x));
-    this.mesh.position.z = Math.max(-258, Math.min(258, this.mesh.position.z));
-    this.mesh.rotation.y = this.angle;
-    this.wheelSpin += this.speed * dt * 2;
-    for (const w of this.mesh.userData.wheels) w.rotation.x = this.wheelSpin;
-    return { vx, vz };
+  const car = createCar(type, x, y, angle, rng);
+  car.parked = true;
+  return car;
+}
+
+// Arcade driving: throttle, steering that scales down with speed, drift on
+// handbrake, off-road drag, and building collision with a damage penalty.
+export function driveCar(car, city, throttle, steerInput, handbrake, dt, onCrash) {
+  const spec = CAR_TYPES[car.type];
+  const onRoad = isRoad(city, car.x, car.y);
+  const surface = onRoad ? 1 : 0.55;
+  const water = isWater(city, car.x, car.y);
+
+  if (throttle > 0) {
+    car.speed += spec.accel * surface * throttle * dt;
+  } else if (throttle < 0) {
+    if (car.speed > 12) car.speed += spec.brake * throttle * dt;
+    else car.speed += spec.accel * 0.55 * throttle * dt; // reverse
   }
-  // Simple AI: drive along a heading, used by traffic and police steering.
-  driveAI(dt, targetAngle, targetSpeed) {
-    let d = targetAngle - this.angle;
-    while (d > Math.PI) d -= Math.PI * 2;
-    while (d < -Math.PI) d += Math.PI * 2;
-    this.angle += Math.max(-1.6 * dt, Math.min(1.6 * dt, d));
-    this.speed += (targetSpeed - this.speed) * Math.min(1, 1.4 * dt);
-    this.mesh.position.x += Math.sin(this.angle) * this.speed * dt;
-    this.mesh.position.z += Math.cos(this.angle) * this.speed * dt;
-    this.mesh.rotation.y = this.angle;
-    this.wheelSpin += this.speed * dt * 2;
-    for (const w of this.mesh.userData.wheels) w.rotation.x = this.wheelSpin;
+  if (handbrake) {
+    car.speed -= Math.sign(car.speed) * 620 * dt;
+    if (Math.abs(car.speed) < 8) car.speed = 0;
   }
-  flashLights(t) {
-    if (!this.mesh.userData.lightBar) return;
-    const on = Math.floor(t * 6) % 2 === 0;
-    this.mesh.userData.lightBar[0].material.color.setHex(on ? 0xff2222 : 0x440000);
-    this.mesh.userData.lightBar[1].material.color.setHex(on ? 0x000044 : 0x2244ff);
+  // Rolling drag and off-road slowdown.
+  car.speed -= car.speed * (onRoad ? 0.35 : 1.15) * dt;
+  if (water) car.speed *= 0.86;
+  const maxForward = spec.topSpeed * surface;
+  const maxReverse = 150;
+  if (car.speed > maxForward) car.speed = maxForward;
+  if (car.speed < -maxReverse) car.speed = -maxReverse;
+  if (Math.abs(car.speed) < 3 && throttle === 0) car.speed = 0;
+
+  const speedFactor = Math.min(1, Math.abs(car.speed) / 220);
+  const steerRate = spec.grip * (handbrake ? 1.7 : 1) * (1 - speedFactor * 0.45);
+  car.angle += steerInput * steerRate * dt * Math.sign(car.speed || 1) * (car.speed < 0 ? -1 : 1);
+
+  const prevX = car.x;
+  const prevY = car.y;
+  car.x += Math.cos(car.angle) * car.speed * dt;
+  car.y += Math.sin(car.angle) * car.speed * dt;
+
+  const hit = resolveCollision(city, car, car.length * 0.42);
+  if (hit) {
+    const impact = Math.abs(car.speed);
+    if (impact > 90 && onCrash) onCrash(car, impact);
+    car.speed *= 0.35;
+    // Slide along the wall instead of sticking to it.
+    const dx = car.x - prevX;
+    const dy = car.y - prevY;
+    if (Math.abs(dx) < 0.5 && Math.abs(dy) > 0.5) car.x = prevX;
+    if (Math.abs(dy) < 0.5 && Math.abs(dx) > 0.5) car.y = prevY;
   }
+  car.brakeLights = throttle < 0 || handbrake;
+  if (car.hp < car.maxHp * 0.4) car.burning = true;
+  return car;
+}
+
+export function damageCar(car, amount) {
+  if (car.dead) return false;
+  car.hp -= amount;
+  if (car.hp <= 0) {
+    car.hp = 0;
+    car.dead = true;
+    car.burning = true;
+    return true; // destroyed
+  }
+  return false;
+}
+
+export function repairCar(car) {
+  car.hp = car.maxHp;
+  car.dead = false;
+  car.burning = false;
+}
+
+// Top-down car with headlights, windshield, neon underglow on sports cars.
+export function drawCar(ctx, car, time) {
+  ctx.save();
+  ctx.translate(car.x, car.y);
+  ctx.rotate(car.angle);
+  const halfL = car.length / 2;
+  const halfW = car.width / 2;
+
+  // Shadow.
+  ctx.fillStyle = 'rgba(8, 4, 18, 0.4)';
+  ctx.beginPath();
+  ctx.ellipse(3, 5, halfL + 2, halfW + 2, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Neon underglow for the fast cars.
+  if (car.type === 'sports' || car.type === 'police') {
+    ctx.fillStyle = car.type === 'sports' ? 'rgba(255, 46, 136, 0.28)' : 'rgba(34, 230, 255, 0.22)';
+    ctx.beginPath();
+    ctx.ellipse(0, 0, halfL + 7, halfW + 7, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Body.
+  ctx.fillStyle = car.color;
+  roundRect(ctx, -halfL, -halfW, car.length, car.width, 8);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.14)';
+  roundRect(ctx, -halfL, -halfW, car.length, 7, 6);
+  ctx.fill();
+
+  // Police livery.
+  if (car.type === 'police') {
+    ctx.fillStyle = '#14121f';
+    ctx.fillRect(-halfL + 4, -halfW, 16, car.width);
+    ctx.fillStyle = '#fff6ec';
+    ctx.font = 'bold 9px Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('NBPD', 2, 3);
+    // Flashing light bar.
+    const phase = Math.floor(time * 6) % 2 === 0;
+    ctx.fillStyle = phase ? '#ff2244' : '#2266ff';
+    ctx.fillRect(-6, -halfW - 3, 10, 6);
+    ctx.fillStyle = phase ? '#2266ff' : '#ff2244';
+    ctx.fillRect(-6, halfW - 3, 10, 6);
+    ctx.fillStyle = phase ? 'rgba(255,34,68,0.25)' : 'rgba(34,102,255,0.25)';
+    ctx.beginPath();
+    ctx.arc(0, 0, 46, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Taxi checker stripe.
+  if (car.type === 'taxi') {
+    ctx.fillStyle = '#14121f';
+    for (let i = 0; i < 6; i++) ctx.fillRect(-halfL + 6 + i * 7, -3, 5, 6);
+  }
+
+  // Windshield and rear window.
+  ctx.fillStyle = 'rgba(16, 20, 38, 0.85)';
+  roundRect(ctx, halfL - 18, -halfW + 4, 12, car.width - 8, 3);
+  ctx.fill();
+  roundRect(ctx, -halfL + 6, -halfW + 4, 9, car.width - 8, 3);
+  ctx.fill();
+
+  // Headlights: warm cones ahead.
+  ctx.fillStyle = 'rgba(255, 240, 180, 0.9)';
+  ctx.fillRect(halfL - 1, -halfW + 3, 3, 5);
+  ctx.fillRect(halfL - 1, halfW - 8, 3, 5);
+  ctx.fillStyle = 'rgba(255, 240, 180, 0.10)';
+  ctx.beginPath();
+  ctx.moveTo(halfL, -halfW + 4);
+  ctx.lineTo(halfL + 58, -halfW - 6);
+  ctx.lineTo(halfL + 58, halfW + 6);
+  ctx.lineTo(halfL, halfW - 4);
+  ctx.closePath();
+  ctx.fill();
+
+  // Taillights.
+  ctx.fillStyle = car.brakeLights ? '#ff2233' : 'rgba(255, 60, 60, 0.75)';
+  ctx.fillRect(-halfL - 1, -halfW + 3, 3, 5);
+  ctx.fillRect(-halfL - 1, halfW - 8, 3, 5);
+
+  // Burning wreck smoke marker.
+  if (car.burning && !car.dead) {
+    ctx.fillStyle = 'rgba(40, 40, 48, 0.5)';
+    ctx.beginPath();
+    ctx.arc(-halfL + 8 + Math.sin(time * 9) * 2, -4, 6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+export function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
 }

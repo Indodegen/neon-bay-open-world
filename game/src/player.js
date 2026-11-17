@@ -1,84 +1,146 @@
-// Jax Marlow on foot: run, sprint, punch, shoot, steal cars (E) and get out (E).
-import * as THREE from 'three';
-
-export function makePersonMesh(shirt = 0xff6b35, pants = 0x2a3a55, skin = 0xc98d64) {
-  const g = new THREE.Group();
-  const skinMat = new THREE.MeshLambertMaterial({ color: skin });
-  const shirtMat = new THREE.MeshLambertMaterial({ color: shirt });
-  const pantsMat = new THREE.MeshLambertMaterial({ color: pants });
-  const legs = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.8, 0.3), pantsMat);
-  legs.position.y = 0.4; g.add(legs);
-  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.72, 0.34), shirtMat);
-  torso.position.y = 1.16; g.add(torso);
-  const head = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.36, 0.34), skinMat);
-  head.position.y = 1.72; g.add(head);
-  const cap = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.12, 0.38),
-    new THREE.MeshLambertMaterial({ color: 0xff9f1c }));
-  cap.position.y = 1.92; g.add(cap);
-  const armL = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.62, 0.16), shirtMat);
-  armL.position.set(-0.4, 1.2, 0); g.add(armL);
-  const armR = armL.clone(); armR.position.x = 0.4; g.add(armR);
-  g.userData.armL = armL; g.userData.armR = armR;
-  return g;
-}
+// player.js — Rex Marlowe on foot: walking, sprinting, punching, shooting,
+// and getting in and out of cars. Driving itself lives in vehicles.js.
+import { PLAYER } from './config.js';
+import { resolveCollision } from './city.js';
 
 export class Player {
-  constructor(scene) {
-    this.mesh = makePersonMesh();
-    this.mesh.position.set(0, 0, 8);
-    scene.add(this.mesh);
-    this.angle = 0; this.speed = 0;
-    this.health = 100; this.cash = 0;
-    this.inCar = null; this.walkBob = 0;
-    this.punchTimer = 0; this.punchCooldown = 0;
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.angle = -Math.PI / 2;
+    this.aimAngle = -Math.PI / 2;
+    this.health = PLAYER.maxHealth;
+    this.armor = 0;
+    this.ammo = PLAYER.pistolAmmo;
+    this.ammoReserve = 96;
+    this.inCar = false;
+    this.car = null;
+    this.punchCooldown = 0;
+    this.shootCooldown = 0;
+    this.reloadTimer = 0;
+    this.invulnerableTimer = 0;
+    this.walkPhase = 0;
+    this.moving = false;
+    this.dead = false;
   }
-  pos() { return this.mesh.position; }
-  update(dt, input, camYaw) {
-    if (this.inCar) return;
+
+  get speed() {
+    return this.inCar && this.car ? Math.abs(this.car.speed) : 0;
+  }
+
+  takeDamage(amount) {
+    if (this.invulnerableTimer > 0 || this.dead) return;
+    let remaining = amount;
+    if (this.armor > 0) {
+      const absorbed = Math.min(this.armor, remaining * 0.7);
+      this.armor -= absorbed;
+      remaining -= absorbed;
+    }
+    this.health -= remaining;
+    this.invulnerableTimer = 0.35;
+    if (this.health <= 0) {
+      this.health = 0;
+      this.dead = true;
+    }
+  }
+
+  heal(amount) {
+    this.health = Math.min(PLAYER.maxHealth, this.health + amount);
+  }
+
+  addArmor(amount) {
+    this.armor = Math.min(PLAYER.maxArmor, this.armor + amount);
+  }
+
+  update(dt, input, city, aimWorld) {
     this.punchCooldown = Math.max(0, this.punchCooldown - dt);
-    this.punchTimer = Math.max(0, this.punchTimer - dt);
-    // Move relative to camera yaw: W forward, S back, A/D strafe-turn.
-    let mx = 0, mz = 0;
-    if (input.down) { mz -= 1; }
-    if (input.up) { mz += 1; }
-    if (input.left) { mx -= 1; }
-    if (input.right) { mx += 1; }
-    const len = Math.hypot(mx, mz);
-    const run = input.sprint ? 9.5 : 5.2;
-    if (len > 0) {
-      mx /= len; mz /= len;
-      const sin = Math.sin(camYaw), cos = Math.cos(camYaw);
-      const wx = (mx * cos - mz * sin), wz = (mx * sin + mz * cos);
-      this.mesh.position.x += wx * run * dt;
-      this.mesh.position.z += wz * run * dt;
-      this.angle = Math.atan2(wx, wz);
-      this.walkBob += dt * run * 1.6;
+    this.shootCooldown = Math.max(0, this.shootCooldown - dt);
+    this.invulnerableTimer = Math.max(0, this.invulnerableTimer - dt);
+    if (this.reloadTimer > 0) {
+      this.reloadTimer -= dt;
+      if (this.reloadTimer <= 0) {
+        const needed = PLAYER.pistolAmmo - this.ammo;
+        const taken = Math.min(needed, this.ammoReserve);
+        this.ammo += taken;
+        this.ammoReserve -= taken;
+      }
     }
-    this.mesh.position.x = Math.max(-258, Math.min(292, this.mesh.position.x));
-    this.mesh.position.z = Math.max(-258, Math.min(258, this.mesh.position.z));
-    this.mesh.rotation.y = this.angle;
-    this.mesh.position.y = Math.abs(Math.sin(this.walkBob)) * 0.06;
-    const swing = len > 0 ? Math.sin(this.walkBob) * 0.5 : 0;
-    this.mesh.userData.armL.rotation.x = swing;
-    this.mesh.userData.armR.rotation.x = -swing;
-    if (this.punchTimer > 0) {
-      this.mesh.userData.armR.rotation.x = -1.6;
+    if (this.inCar) return;
+    this.aimAngle = aimWorld ? Math.atan2(aimWorld.y - this.y, aimWorld.x - this.x) : this.angle;
+
+    const moveX = input.axis('KeyA', 'KeyD') + input.axis('ArrowLeft', 'ArrowRight');
+    const moveY = input.axis('KeyW', 'KeyS') + input.axis('ArrowUp', 'ArrowDown');
+    const sprinting = input.isDown('ShiftLeft') || input.isDown('ShiftRight');
+    const speed = sprinting ? PLAYER.sprintSpeed : PLAYER.walkSpeed;
+    this.moving = moveX !== 0 || moveY !== 0;
+    if (this.moving) {
+      const len = Math.hypot(moveX, moveY) || 1;
+      this.x += (moveX / len) * speed * dt;
+      this.y += (moveY / len) * speed * dt;
+      this.angle = Math.atan2(moveY, moveX);
+      this.walkPhase += dt * (sprinting ? 13 : 9);
     }
+    resolveCollision(city, this, PLAYER.radius);
   }
-  punch() {
-    if (this.punchCooldown > 0 || this.inCar) return false;
-    this.punchCooldown = 0.45; this.punchTimer = 0.25;
+
+  startReload() {
+    if (this.reloadTimer > 0 || this.ammo >= PLAYER.pistolAmmo || this.ammoReserve <= 0) return false;
+    this.reloadTimer = PLAYER.reloadTime;
     return true;
   }
-  enterCar(car) {
-    this.inCar = car; this.mesh.visible = false; car.stolen = true;
+
+  // Drawn top-down: shoulders, head, and the pistol when armed.
+  draw(ctx, time) {
+    if (this.inCar) return;
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    const bob = this.moving ? Math.sin(this.walkPhase) * 1.5 : 0;
+    // Soft white ring so the player reads at a glance, even shrunk.
+    ctx.strokeStyle = 'rgba(255, 246, 236, 0.55)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(0, 0, 15, 0, Math.PI * 2);
+    ctx.stroke();
+    // Shadow.
+    ctx.fillStyle = 'rgba(8, 4, 18, 0.4)';
+    ctx.beginPath();
+    ctx.ellipse(1, 3, 12, 8, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.rotate(this.aimAngle);
+    // Jacket.
+    ctx.fillStyle = '#ff2e88';
+    ctx.beginPath();
+    ctx.arc(0, 0, 11, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#1c1a26';
+    ctx.fillRect(-2, -11, 8, 22);
+    // Head.
+    ctx.fillStyle = '#f1c27d';
+    ctx.beginPath();
+    ctx.arc(4, 0, 6.5, 0, Math.PI * 2);
+    ctx.fill();
+    // Hair.
+    ctx.fillStyle = '#241a12';
+    ctx.beginPath();
+    ctx.arc(2, 0, 6.5, Math.PI * 0.5, Math.PI * 1.5);
+    ctx.fill();
+    // Pistol in hand, pointing where the mouse aims.
+    ctx.fillStyle = '#22222e';
+    ctx.fillRect(8, -2, 12, 4);
+    // Muzzle flash glow right after a shot.
+    if (this.shootCooldown > PLAYER.pistolCooldown - 0.06) {
+      ctx.fillStyle = 'rgba(255, 211, 25, 0.9)';
+      ctx.beginPath();
+      ctx.arc(22, 0, 6 + Math.random() * 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // Feet while walking.
+    ctx.fillStyle = '#e8e8f0';
+    ctx.beginPath();
+    ctx.arc(-8, -5 + bob, 3, 0, Math.PI * 2);
+    ctx.arc(-8, 5 - bob, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    void time;
   }
-  exitCar() {
-    if (!this.inCar) return;
-    const c = this.inCar;
-    this.mesh.position.set(c.mesh.position.x + 2.6, 0, c.mesh.position.z);
-    this.mesh.visible = true; this.inCar = null;
-  }
-  damage(n) { this.health = Math.max(0, this.health - n); return this.health <= 0; }
-  heal(n) { this.health = Math.min(100, this.health + n); }
 }

@@ -1,35 +1,71 @@
-// Keyboard + mouse input, shared by player, vehicles and camera.
+// input.js — Keyboard and mouse state for NEON BAY.
+// One object owns every key and the mouse; the game reads it, never the DOM.
 export class Input {
   constructor(canvas) {
-    this.keys = {};
-    this.mouseDX = 0; this.mouseDY = 0;
-    this.mouseDown = false; this.clicked = false;
-    this.dragging = false; this.lastX = 0; this.lastY = 0;
-    addEventListener('keydown', (e) => {
-      if (e.repeat) return;
-      this.keys[e.code] = true;
-      if (e.code === 'Space') e.preventDefault();
+    this.canvas = canvas;
+    this.keys = new Set();
+    this.pressedKeys = new Set();
+    this.mouse = { x: 0, y: 0, down: false, clicked: false };
+    this.anyKey = false;
+
+    window.addEventListener('keydown', (event) => {
+      if (event.repeat) return;
+      this.keys.add(event.code);
+      this.pressedKeys.add(event.code);
+      this.anyKey = true;
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(event.code)) {
+        event.preventDefault();
+      }
     });
-    addEventListener('keyup', (e) => { this.keys[e.code] = false; });
-    canvas.addEventListener('mousedown', (e) => {
-      this.mouseDown = true; this.clicked = true; this.dragging = true;
-      this.lastX = e.clientX; this.lastY = e.clientY;
+    window.addEventListener('keyup', (event) => {
+      this.keys.delete(event.code);
     });
-    addEventListener('mouseup', () => { this.mouseDown = false; this.dragging = false; });
-    addEventListener('mousemove', (e) => {
-      if (!this.dragging) return;
-      this.mouseDX += e.clientX - this.lastX; this.mouseDY += e.clientY - this.lastY;
-      this.lastX = e.clientX; this.lastY = e.clientY;
+    window.addEventListener('blur', () => {
+      this.keys.clear();
     });
-    addEventListener('blur', () => { this.keys = {}; this.mouseDown = false; this.dragging = false; });
+
+    canvas.addEventListener('mousemove', (event) => {
+      const rect = canvas.getBoundingClientRect();
+      this.mouse.x = event.clientX - rect.left;
+      this.mouse.y = event.clientY - rect.top;
+    });
+    canvas.addEventListener('mousedown', (event) => {
+      if (event.button === 0) {
+        // Refresh the pointer position from the click itself: a click with
+        // no prior mouse movement must still land where the user clicked.
+        const rect = canvas.getBoundingClientRect();
+        this.mouse.x = event.clientX - rect.left;
+        this.mouse.y = event.clientY - rect.top;
+        this.mouse.down = true;
+        this.mouse.clicked = true;
+      }
+    });
+    window.addEventListener('mouseup', (event) => {
+      if (event.button === 0) this.mouse.down = false;
+    });
+    canvas.addEventListener('contextmenu', (event) => event.preventDefault());
   }
-  get down() { return this.keys.KeyW || this.keys.ArrowUp; }
-  get up() { return this.keys.KeyS || this.keys.ArrowDown; }
-  get left() { return this.keys.KeyA || this.keys.ArrowLeft; }
-  get right() { return this.keys.KeyD || this.keys.ArrowRight; }
-  get sprint() { return !!this.keys.ShiftLeft || !!this.keys.ShiftRight; }
-  get brake() { return !!this.keys.Space; }
-  consumeClick() { const c = this.clicked; this.clicked = false; return c; }
-  consumeDrag() { const dx = this.mouseDX, dy = this.mouseDY; this.mouseDX = 0; this.mouseDY = 0; return { dx, dy }; }
-  pressed(code) { const p = !!this.keys[code]; if (p) this.keys[code] = false; return p; }
+
+  isDown(code) {
+    return this.keys.has(code);
+  }
+
+  // True only on the frame the key went down.
+  wasPressed(code) {
+    return this.pressedKeys.has(code);
+  }
+
+  axis(negativeCode, positiveCode) {
+    let value = 0;
+    if (this.isDown(negativeCode)) value -= 1;
+    if (this.isDown(positiveCode)) value += 1;
+    return value;
+  }
+
+  // Call at the end of every frame so edge-triggered presses fire once.
+  endFrame() {
+    this.pressedKeys.clear();
+    this.mouse.clicked = false;
+    this.anyKey = false;
+  }
 }

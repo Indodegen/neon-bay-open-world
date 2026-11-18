@@ -1,167 +1,146 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>NEON BAY — Open-World Crime in Coral Bay</title>
+<meta name="description" content="NEON BAY — a complete 3D open-world crime game set in the original coastal city of Coral Bay. Drive, chase, and race across the bay bridge.">
 <link rel="icon" href="data:,">
+<title>NEON BAY — Coral Bay Open World</title>
 <style>
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #0b1026; font-family: Arial, Helvetica, sans-serif; }
-  #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
-  #hud { position: fixed; inset: 0; pointer-events: none; color: #fff; z-index: 5; }
-  .hidden { display: none !important; }
-  .hud-panel { position: absolute; text-shadow: 0 2px 6px rgba(0,0,0,.8); }
-  /* GTA 6 layout: mission top-left, stars top-right, cash bottom-right,
-     weapon above the round minimap bottom-left. */
-  #hud-mission { top: 16px; left: 18px; max-width: 430px; text-align: left;
-    background: rgba(8,10,24,0.62); border: 1px solid rgba(255,210,62,0.55); border-radius: 10px;
-    padding: 9px 16px 11px; backdrop-filter: blur(3px); }
-  .mission-title { font-size: 12px; letter-spacing: 2px; color: #ffd23e; font-weight: bold; }
-  .mission-text { font-size: 16px; font-weight: bold; margin-top: 2px; }
-  .mission-dist { font-size: 13px; opacity: 0.9; margin-top: 2px; }
-  #hud-counters { top: 108px; left: 18px; font-size: 12px; opacity: 0.92; letter-spacing: 0.5px; }
-  #hud-top-right { top: 16px; right: 18px; text-align: right; }
-  .stars { font-size: 32px; letter-spacing: 4px; color: #ffd23e; line-height: 1; }
-  .stars.hot { color: #ff3b30; animation: pulse 0.7s infinite alternate; }
-  @keyframes pulse { from { opacity: 1; } to { opacity: 0.55; } }
-  .clock { font-size: 16px; font-weight: bold; margin-top: 6px; letter-spacing: 1px; }
-  .weather { font-size: 12px; opacity: 0.85; margin-top: 2px; }
-  .police-list { margin-top: 10px; background: rgba(8,10,24,0.66); border: 1px solid rgba(77,159,255,0.55);
-    border-radius: 8px; padding: 8px 10px; text-align: left; min-width: 250px; }
-  .unit-row { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; padding: 2px 0; }
-  .unit-name { font-weight: bold; color: #9fd8ff; }
-  .unit-status { font-weight: bold; }
-  .unit-status.pursuit { color: #ff5e5e; }
-  .unit-status.ramming { color: #ff3b30; }
-  .unit-status.roadblock { color: #ffb02e; }
-  .unit-status.search { color: #ffd23e; }
-  .unit-status.patrol { color: #7CFC00; }
-  .unit-dist { opacity: 0.85; }
-  #hud-bottom-left { bottom: 16px; left: 18px; }
-  .weapon { font-size: 15px; font-weight: bold; margin-bottom: 6px; text-shadow: 0 2px 6px rgba(0,0,0,.9); }
-  .bar-row { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; }
-  .bar-label { font-size: 10px; font-weight: bold; width: 44px; text-align: right; letter-spacing: 1px; }
-  .bar { width: 140px; height: 11px; background: rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.5);
-    border-radius: 6px; overflow: hidden; }
-  #hud-health-fill { height: 100%; width: 100%; background: #37d67a; transition: width 0.2s; }
-  #hud-armor-fill { height: 100%; width: 0%; background: #4d9fff; transition: width 0.2s; }
-  #minimap { width: 190px; height: 190px; border-radius: 50%; border: 3px solid rgba(255,255,255,0.75);
-    box-shadow: 0 4px 18px rgba(0,0,0,.55); background: #0e6f8e; display: block; margin-top: 4px; }
-  #hud-bottom-right { bottom: 16px; right: 22px; text-align: right; }
-  .radio { font-size: 13px; font-weight: bold; color: #ffd27a; margin-bottom: 4px; }
-  #hud-speed { font-size: 46px; font-weight: bold; text-shadow: 0 2px 8px rgba(0,0,0,.85); line-height: 1; }
-  #hud-speed.fast { color: #ff5e5e; }
-  .speed-unit { font-size: 16px; opacity: 0.85; }
-  .bar.cond { width: 170px; height: 9px; margin: 5px 0 2px auto; }
-  #hud-cond-fill { height: 100%; width: 100%; background: #37d67a; }
-  .cond-label { font-size: 11px; opacity: 0.9; }
-  .cash { font-size: 32px; font-weight: bold; color: #7CFC00; letter-spacing: 1px; margin-top: 6px; }
-  .jobs { font-size: 13px; opacity: 0.9; margin-top: 3px; }
-  .notifs { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); width: 520px;
-    text-align: center; display: flex; flex-direction: column; gap: 6px; align-items: center; }
-  .notif { background: rgba(8,10,24,0.82); border: 1px solid rgba(255,255,255,0.4); border-radius: 8px;
-    padding: 8px 18px; font-size: 15px; font-weight: bold; transition: opacity 0.8s; }
-  .notif.good { border-color: #7CFC00; color: #b6ff7a; }
-  .notif.gold { border-color: #ffd23e; color: #ffe9a0; }
-  .notif.bad { border-color: #ff3b30; color: #ffb0a0; }
-  .notif.fade { opacity: 0; }
-  #hud-arrow { position: absolute; top: 128px; left: 50%; font-size: 26px; color: #ffd23e;
-    text-shadow: 0 0 10px rgba(255,210,62,.9), 0 2px 4px rgba(0,0,0,.8); }
-  .toast { position: absolute; bottom: 130px; left: 50%; transform: translateX(-50%);
-    background: rgba(8,10,24,0.78); border: 1px solid rgba(255,255,255,0.35); border-radius: 8px;
-    padding: 10px 20px; font-size: 15px; font-weight: bold; max-width: 640px; text-align: center; }
-  .crosshair { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
-    font-size: 26px; color: #fff; text-shadow: 0 0 6px #000; }
-  .hint { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); font-size: 12px;
-    opacity: 0.75; text-shadow: 0 1px 4px rgba(0,0,0,.9); white-space: nowrap; }
-  .dialog { position: absolute; bottom: 52px; left: 50%; transform: translateX(-50%);
-    display: flex; gap: 12px; align-items: center; background: rgba(8,10,24,0.85);
-    border: 1px solid rgba(255,46,136,0.6); border-radius: 12px; padding: 10px 18px 10px 10px;
-    max-width: 620px; }
-  #hud-portrait { border-radius: 8px; border: 2px solid rgba(255,210,62,0.7); flex: none; }
-  .dialog-name { font-size: 13px; font-weight: bold; color: #ffd23e; letter-spacing: 1px; }
-  .dialog-text { font-size: 15px; line-height: 1.45; margin-top: 2px; }
-  .screen { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-    background: rgba(5, 8, 20, 0.45); pointer-events: auto; }
-  #screen-title { background: linear-gradient(180deg, rgba(10,8,28,0.25) 0%, rgba(10,8,28,0.55) 62%, rgba(255,90,40,0.28) 100%); }
-  .title-block { text-align: center; padding: 0 24px; }
-  .title-kicker { letter-spacing: 5px; font-size: 14px; color: #ffd23e; font-weight: bold; text-shadow: 0 2px 8px rgba(0,0,0,.8); }
-  .title-main { font-size: 118px; line-height: 0.9; margin: 14px 0 10px; font-weight: 900; letter-spacing: 2px;
-    background: linear-gradient(180deg, #fff6c9 0%, #ffd23e 38%, #ff2e88 78%, #c86bff 100%);
-    -webkit-background-clip: text; background-clip: text; color: transparent;
-    filter: drop-shadow(0 4px 22px rgba(255,46,136,0.55)); }
-  .title-sub { font-size: 17px; line-height: 1.5; opacity: 0.95; text-shadow: 0 2px 8px rgba(0,0,0,.9); }
-  .title-controls { margin-top: 18px; font-size: 12px; opacity: 0.8; line-height: 1.7; text-shadow: 0 1px 4px rgba(0,0,0,.9); }
-  .modal { background: rgba(10,12,28,0.92); border: 1px solid rgba(255,210,62,0.6); border-radius: 14px;
-    padding: 28px 32px; max-width: 560px; text-align: center; box-shadow: 0 10px 50px rgba(0,0,0,.7);
-    max-height: 96vh; overflow-y: auto; }
-  .modal.map-modal { padding: 20px 26px; }
-  .modal.wide { max-width: 680px; text-align: left; }
-  .modal.bad { border-color: rgba(255,59,48,0.8); }
-  .modal.good { border-color: rgba(124,252,0,0.8); }
-  .modal-kicker { letter-spacing: 3px; font-size: 12px; color: #ffd23e; font-weight: bold; }
-  .modal-title { font-size: 34px; margin: 8px 0 10px; }
-  .modal-text { font-size: 16px; line-height: 1.55; opacity: 0.95; }
-  .modal-payout { font-size: 22px; font-weight: bold; color: #7CFC00; margin: 12px 0 4px; }
-  .btn { pointer-events: auto; cursor: pointer; display: inline-block; margin: 10px 6px 0; padding: 12px 26px;
-    font-size: 16px; font-weight: bold; color: #fff; background: #1f6fb2; border: 2px solid rgba(255,255,255,0.35);
-    border-radius: 10px; }
-  .btn:hover { filter: brightness(1.2); }
-  .btn.big { background: linear-gradient(180deg, #ff2e88, #b3125e); font-size: 19px; padding: 15px 34px; }
-  .btn.ghost { background: transparent; }
-  .jobs-list { margin: 14px 0; }
-  .job-row { border-top: 1px solid rgba(255,255,255,0.18); padding: 10px 2px; font-size: 14px; line-height: 1.5; }
-  .job-row b { font-size: 15px; }
-  .job-row span { float: right; color: #ffd23e; font-weight: bold; }
-  .job-brief { color: #ddd !important; font-weight: normal !important; float: none !important; }
-  .briefing-head { display: flex; gap: 14px; align-items: center; justify-content: center; margin: 6px 0 2px; }
-  #briefing-portrait { border-radius: 10px; border: 2px solid rgba(255,210,62,0.7); flex: none; }
-  .modal-banner { font-size: 26px; font-weight: 900; letter-spacing: 2px; color: #7CFC00;
-    text-shadow: 0 0 18px rgba(124,252,0,0.6); margin-bottom: 6px; }
-  .modal-unlock { font-size: 15px; font-weight: bold; color: #ffd23e; margin: 10px 0 2px; }
-  .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 22px; text-align: left;
-    font-size: 14px; margin: 12px 0; line-height: 1.6; }
-  .stats-grid b { color: #ffd23e; }
-  .save-slots { margin-top: 14px; display: flex; gap: 10px; justify-content: center; }
-  .save-slot { pointer-events: auto; cursor: pointer; background: rgba(255,255,255,0.08);
-    border: 1px solid rgba(255,255,255,0.35); border-radius: 8px; padding: 9px 16px; font-size: 13px;
-    color: #fff; min-width: 150px; }
-  .save-slot:hover { background: rgba(255,255,255,0.18); }
-  .save-slot b { display: block; font-size: 14px; color: #ffd23e; margin-bottom: 2px; }
-  .map-modal { max-width: 1060px; width: 94vw; }
-  .map-wrap { display: flex; gap: 16px; margin: 12px 0; align-items: flex-start; }
-  #bigmap { border-radius: 10px; border: 2px solid rgba(255,255,255,0.5); background: #0e6f8e; }
-  .map-side { text-align: left; font-size: 14px; line-height: 1.55; min-width: 300px; }
-  .map-complete { font-size: 22px; font-weight: bold; color: #7CFC00; margin-bottom: 8px; }
-  .map-story { font-size: 13px; }
-  .map-story div { padding: 2px 0; border-top: 1px solid rgba(255,255,255,0.14); }
-  .map-stats { margin-top: 10px; color: #ddd; font-size: 13px; line-height: 1.5; }
-  .map-legend { font-size: 13px; line-height: 1.6; }
-  .map-legend { margin-top: 12px; font-size: 13px; line-height: 1.8; }
-  .blip { font-size: 15px; }
-  .blip.yellow { color: #ffd23e; } .blip.blue { color: #4d9fff; } .blip.green { color: #7CFC00; }
-  .blip.pink { color: #ff2e88; } .blip.white { color: #ffffff; }
-  .shop-list { text-align: left; margin: 10px 0; }
-  .shop-row { display: flex; justify-content: space-between; align-items: center; gap: 12px;
-    border-top: 1px solid rgba(255,255,255,0.16); padding: 10px 2px; font-size: 14px; }
-  .shop-row b { font-size: 15px; }
-  .shop-row .desc { opacity: 0.85; font-size: 13px; }
-  .shop-buy { pointer-events: auto; cursor: pointer; background: #1f6fb2; color: #fff; font-weight: bold;
-    border: 1px solid rgba(255,255,255,0.4); border-radius: 8px; padding: 8px 16px; font-size: 14px; white-space: nowrap; }
-  .shop-buy:hover { filter: brightness(1.25); }
-  .shop-buy:disabled { opacity: 0.45; cursor: default; }
-  .respray-row { display: flex; gap: 8px; justify-content: center; margin: 12px 0 4px; flex-wrap: wrap; }
-  .swatch { pointer-events: auto; cursor: pointer; width: 34px; height: 34px; border-radius: 50%;
-    border: 3px solid rgba(255,255,255,0.6); }
-  .swatch:hover { transform: scale(1.15); }
-  #status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #0b1026;
+    font-family: 'Segoe UI', Arial, Helvetica, sans-serif; color: #fff; }
+  #app, #app canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  #hud { position: fixed; inset: 0; pointer-events: none; z-index: 10; font-size: 14px; }
+  #hud-top-left { position: absolute; top: 14px; left: 14px; }
+  #mission-panel { background: rgba(8,12,20,.78); border-left: 4px solid #ffd166; padding: 10px 14px;
+    border-radius: 4px; max-width: 420px; box-shadow: 0 2px 12px rgba(0,0,0,.45); }
+  #mission-title { font-weight: 800; letter-spacing: 2px; font-size: 15px; color: #ffd166; }
+  #mission-objective { font-size: 13px; color: #e8ecf2; margin-top: 3px; line-height: 1.35; }
+  #mission-progress { height: 5px; background: rgba(255,255,255,.15); border-radius: 3px; margin-top: 7px; overflow: hidden; }
+  #mission-progress-fill { display: none; height: 100%; width: 0%; background: #ffd166; }
+  #mission-dist { font-size: 12px; color: #9fd4ff; margin-top: 4px; font-weight: 700; }
+  #hud-top-right { position: absolute; top: 14px; right: 16px; text-align: right; }
+  #stars { font-size: 26px; letter-spacing: 3px; text-shadow: 0 0 8px rgba(0,0,0,.7); }
+  #stars .star { color: rgba(255,255,255,.25); }
+  #stars .star.on { color: #ffd166; text-shadow: 0 0 10px #ffb347; }
+  #clock-weather { margin-top: 2px; font-weight: 700; font-size: 15px; text-shadow: 0 1px 4px #000; }
+  #clock-weather #weather { color: #9fd4ff; margin-left: 10px; font-size: 13px; }
+  #radio-box { margin-top: 6px; background: rgba(8,12,20,.72); padding: 5px 10px; border-radius: 4px; display: inline-block; }
+  #radio-name { font-weight: 800; font-size: 13px; }
+  #radio-desc { display: block; font-size: 11px; color: #b8c2d0; }
+  #hud-bottom-left { position: absolute; left: 14px; bottom: 14px; }
+  #minimap { border-radius: 50%; border: 3px solid rgba(255,209,102,.9); box-shadow: 0 0 0 3px rgba(0,0,0,.55), 0 4px 18px rgba(0,0,0,.6); background: #0a0e14; display: block; }
+  #weapon-box { margin-top: 8px; background: rgba(8,12,20,.78); padding: 6px 12px; border-radius: 4px; display: inline-block; }
+  #weapon-name { font-weight: 800; letter-spacing: 1px; }
+  #weapon-ammo { color: #ffd166; font-weight: 700; margin-left: 10px; }
+  #hud-bottom-right { position: absolute; right: 16px; bottom: 14px; text-align: right; }
+  #cash { font-size: 30px; font-weight: 800; color: #4dff6b; text-shadow: 0 2px 6px #000; letter-spacing: 1px; }
+  #speedo { font-size: 34px; font-weight: 800; text-shadow: 0 2px 6px #000; margin-top: 2px; }
+  #speed-unit { font-size: 12px; color: #b8c2d0; margin-left: 4px; }
+  #veh-cond { display: none; align-items: center; gap: 8px; margin-top: 6px; justify-content: flex-end; }
+  #veh-cond > div { width: 150px; height: 7px; background: rgba(255,255,255,.18); border-radius: 4px; overflow: hidden; }
+  #veh-cond-fill { height: 100%; width: 100%; background: #4dff6b; }
+  #veh-cond-label { font-size: 11px; font-weight: 700; color: #dfe6ef; }
+  #hud-bottom-center { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); width: 260px; }
+  #hp-bar, #armor-bar { height: 12px; background: rgba(0,0,0,.55); border-radius: 6px; overflow: hidden; position: relative; margin-top: 5px; }
+  #hp-fill, #armor-fill { height: 100%; width: 100%; }
+  #hp-fill { background: #4dff6b; } #armor-fill { background: #7fd4ff; }
+  #hp-bar span, #armor-bar span { position: absolute; right: 6px; top: 0; font-size: 9px; font-weight: 800; color: #fff; line-height: 12px; text-shadow: 0 1px 2px #000; }
+  #police-list { position: absolute; top: 150px; right: 16px; background: rgba(8,12,20,.78); border: 1px solid rgba(255,80,80,.4);
+    border-radius: 4px; padding: 8px 10px; min-width: 250px; display: none; }
+  .police-head { font-weight: 800; color: #ff6b6b; letter-spacing: 2px; font-size: 12px; margin-bottom: 5px; }
+  .police-row { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; padding: 2px 0; color: #e8ecf2; }
+  .police-row .st-PURSUIT { color: #ff6b6b; font-weight: 800; }
+  .police-row .st-RAMMING { color: #ff2222; font-weight: 800; }
+  .police-row .st-BOXINGIN { color: #ffb347; font-weight: 800; }
+  .police-row .st-SEARCHLIGHT { color: #7fd4ff; font-weight: 800; }
+  #dialog { position: absolute; left: 50%; bottom: 110px; transform: translateX(-50%) translateY(20px); width: 620px; max-width: 82vw;
+    background: rgba(8,12,20,.88); border: 1px solid rgba(255,209,102,.5); border-radius: 8px; padding: 12px;
+    display: none; gap: 12px; align-items: flex-start; opacity: 0; transition: opacity .25s, transform .25s; }
+  #dialog.show { display: flex; opacity: 1; transform: translateX(-50%) translateY(0); }
+  #dialog-portrait { width: 96px; height: 106px; border-radius: 6px; object-fit: cover; border: 2px solid rgba(255,255,255,.25); }
+  #dialog-name { font-weight: 800; font-size: 15px; margin-bottom: 4px; }
+  #dialog-text { font-size: 14px; line-height: 1.5; color: #eef1f6; }
+  #dialog-hint { margin-top: 7px; font-size: 11px; color: #9aa6b5; }
+  #notifications { position: absolute; left: 50%; top: 84px; transform: translateX(-50%); width: 480px; text-align: center; }
+  .notif { background: rgba(8,12,20,.85); border-left: 4px solid #ffd166; border-radius: 4px; padding: 8px 14px; margin-top: 6px;
+    box-shadow: 0 2px 10px rgba(0,0,0,.5); transition: opacity .5s; }
+  .notif b { display: block; letter-spacing: 2px; font-size: 13px; color: #ffd166; }
+  .notif span { font-size: 13px; color: #e8ecf2; }
+  .notif.out { opacity: 0; }
+  #counters { position: absolute; left: 250px; bottom: 18px; font-size: 12px; font-weight: 700; color: #dfe6ef; text-shadow: 0 1px 3px #000; display: flex; gap: 14px; }
+  #interact-prompt { position: absolute; left: 50%; bottom: 210px; transform: translateX(-50%); background: rgba(8,12,20,.85);
+    border: 1px solid rgba(255,255,255,.35); padding: 7px 14px; border-radius: 4px; font-weight: 700; display: none; }
+  #toast { position: absolute; left: 50%; bottom: 260px; transform: translateX(-50%); background: rgba(8,12,20,.9);
+    padding: 8px 16px; border-radius: 4px; font-weight: 700; opacity: 0; transition: opacity .3s; }
+  #toast.show { opacity: 1; }
+  #screen { position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+    background: rgba(5,8,16,.72); backdrop-filter: blur(3px); z-index: 20; pointer-events: auto; }
+  #screen.show { display: flex; }
+  /* Garage docks its panel to the left on a lighter veil so the upgraded
+     car behind it stays visible on the right of the frame. */
+  #screen.screen-garage { justify-content: flex-start; background: rgba(5,8,16,.45); backdrop-filter: blur(1px); }
+  #screen.screen-garage .screen-inner { margin: auto 0 auto 36px; max-width: 560px; text-align: left; }
+  .screen-inner { max-width: 860px; width: 92vw; max-height: 92vh; overflow-y: auto; background: rgba(10,14,24,.96);
+    border: 1px solid rgba(255,209,102,.45); border-radius: 10px; padding: 28px 34px; text-align: center; box-shadow: 0 10px 60px rgba(0,0,0,.7); }
+  .big-title { font-size: 44px; font-weight: 900; letter-spacing: 6px; }
+  .big-title.gold { color: #ffd166; text-shadow: 0 0 24px rgba(255,179,71,.5); }
+  .big-title.red { color: #ff3b30; text-shadow: 0 0 24px rgba(255,59,48,.5); }
+  .big-sub { font-size: 16px; color: #c8d2de; margin-top: 6px; }
+  .big-pay { font-size: 30px; font-weight: 900; color: #4dff6b; margin-top: 14px; }
+  .big-hint { margin-top: 18px; font-size: 13px; color: #9aa6b5; }
+  .title-logo { font-size: 84px; font-weight: 900; letter-spacing: 8px; line-height: 1;
+    background: linear-gradient(180deg, #ffe9a8, #ff8a4d 55%, #ff2e88); -webkit-background-clip: text; background-clip: text; color: transparent;
+    text-shadow: 0 0 60px rgba(255,46,136,.35); }
+  .title-logo span { color: transparent; }
+  .title-tag { letter-spacing: 4px; font-size: 13px; color: #9fd4ff; margin-top: 8px; }
+  .title-menu { margin: 26px auto 0; text-align: left; width: 380px; font-size: 16px; font-weight: 700; }
+  .title-item { padding: 8px 12px; border-radius: 4px; color: #c8d2de; }
+  .title-item.sel { background: rgba(255,209,102,.16); color: #ffd166; }
+  .title-controls { margin-top: 24px; font-size: 12px; color: #8b96a5; line-height: 1.7; }
+  .title-foot { margin-top: 10px; font-size: 11px; color: #5f6a7a; }
+  .panel-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px; text-align: left; }
+  .panel-grid > div { background: rgba(255,255,255,.06); border-radius: 6px; padding: 10px 14px; }
+  .panel-grid b { display: block; font-size: 11px; letter-spacing: 2px; color: #9aa6b5; }
+  .panel-grid span { font-size: 17px; font-weight: 700; }
+  .shop-row { display: flex; gap: 14px; align-items: center; text-align: left; background: rgba(255,255,255,.05);
+    border-radius: 6px; padding: 11px 14px; margin-top: 8px; font-size: 14px; }
+  .shop-row b { min-width: 150px; }
+  .shop-row span:nth-child(2) { flex: 1; color: #b8c2d0; font-size: 13px; }
+  .shop-row span:nth-child(3) { color: #ffd166; font-weight: 800; }
+  .shop-row span:nth-child(4) { color: #7fd4ff; font-weight: 700; font-size: 12px; }
+  .map-wrap { display: flex; gap: 20px; margin-top: 16px; text-align: left; }
+  #map-canvas { border-radius: 8px; border: 2px solid rgba(255,209,102,.5); }
+  .map-side { flex: 1; }
+  .map-pct { font-size: 20px; font-weight: 900; color: #ffd166; }
+  .map-list { margin-top: 10px; font-size: 13px; line-height: 1.9; color: #dfe6ef; }
+  .map-mission.done { color: #4dff6b; }
+  .map-legend { margin-top: 12px; font-size: 12px; color: #9aa6b5; }
+  .map-stats { margin-top: 8px; font-size: 13px; color: #e8ecf2; }
+  .briefing-wrap { display: flex; gap: 22px; text-align: left; align-items: flex-start; }
+  .briefing-portrait { width: 180px; height: 200px; border-radius: 8px; border: 2px solid rgba(255,209,102,.5); object-fit: cover; }
+  .briefing-text { margin-top: 12px; font-size: 15px; line-height: 1.6; color: #e8ecf2; }
+  #cutscene-bars { position: fixed; inset: 0; pointer-events: none; z-index: 15; display: none; }
+  #cutscene-bars.show { display: block; }
+  #cutscene-bars .bar { position: absolute; left: 0; right: 0; height: 9vh; background: #000; }
+  #cutscene-bars .bar.top { top: 0; } #cutscene-bars .bar.bottom { bottom: 0; }
+  #loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: #0b1026; z-index: 50; font-size: 18px; letter-spacing: 3px; color: #ffd166; }
 </style>
 </head>
 <body>
-<canvas id="game" aria-label="NEON BAY: an open-world crime game in Coral Bay. Drive, steal cars, outrun the police and run jobs for Vera Solano."></canvas>
+<div id="app"></div>
 <div id="hud"></div>
-<p id="status" role="status" aria-live="polite"></p>
-<script src="./vendor/three.min.js"></script>
-<script type="module" src="./src/main.js"></script>
+<div id="loading">LOADING NEON BAY…</div>
+<script src="vendor/three.min.js"></script>
+<script type="module" src="src/main.js"></script>
+<script>
+  // Hide the loading veil once the game has booted a few frames.
+  const iv = setInterval(() => {
+    if (window.__booted) { const l = document.getElementById('loading'); if (l) l.remove(); clearInterval(iv); }
+  }, 200);
+  setTimeout(() => { const l = document.getElementById('loading'); if (l) l.remove(); }, 9000);
+</script>
 </body>
 </html>

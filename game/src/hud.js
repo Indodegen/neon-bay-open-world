@@ -1,470 +1,418 @@
-// The HUD, laid out the GTA 6 way: round minimap bottom-left with the weapon
-// above it, wanted stars top-right, cash bottom-right, the active mission
-// top-left, clock and radio on screen, a named police-unit list, a dialog box
-// with a portrait, a notification feed, and the full map / garage / gun-shop
-// screens.
-import { formatCash, formatClock, clamp } from './utils.js';
-import { drawPortrait } from './portraits.js';
+// NEON BAY — hud.js
+// The full GTA-style HUD (DOM + canvas minimap) and every screen: title,
+// briefing, pause, busted/wasted, mission complete, jobs, full map, garage,
+// gun shop, safehouse, cutscenes, notifications and dialog with procedural
+// portraits. All text is original; all portraits are drawn on canvas.
 
-export function createHud() {
+import { CHARACTERS, RADIO, MISSIONS, SIDE_JOBS, GARAGE_UPGRADES, PROPERTIES, WEATHER_NAMES, STREETS } from './config.js';
+import { fmtMoney, fmtClock, makeCanvas, roundRect } from './util.js';
+
+// --- procedural portraits -----------------------------------------------------
+export function portraitURL(key) {
+  const ch = CHARACTERS[key] || CHARACTERS.vera;
+  const c = makeCanvas(180, 200), x = c.getContext('2d');
+  // backdrop
+  const g = x.createLinearGradient(0, 0, 0, 200);
+  g.addColorStop(0, '#2b2f45'); g.addColorStop(1, ch.accent + '55');
+  x.fillStyle = g; x.fillRect(0, 0, 180, 200);
+  x.strokeStyle = 'rgba(255,255,255,0.15)';
+  for (let i = 0; i < 5; i++) { x.beginPath(); x.moveTo(0, 30 + i * 36); x.lineTo(180, 14 + i * 36); x.stroke(); }
+  // shoulders / jacket
+  x.fillStyle = '#1d2233';
+  x.beginPath(); x.moveTo(20, 200); x.quadraticCurveTo(30, 148, 90, 146); x.quadraticCurveTo(150, 148, 160, 200); x.closePath(); x.fill();
+  x.fillStyle = ch.accent; x.fillRect(84, 148, 12, 52);
+  // neck + head
+  x.fillStyle = '#b97e55'; x.fillRect(80, 128, 20, 26);
+  x.fillStyle = ch.skin;
+  x.beginPath(); x.ellipse(90, 96, 34, 42, 0, 0, Math.PI * 2); x.fill();
+  // ears
+  x.beginPath(); x.ellipse(56, 98, 6, 9, 0, 0, Math.PI * 2); x.fill();
+  x.beginPath(); x.ellipse(124, 98, 6, 9, 0, 0, Math.PI * 2); x.fill();
+  // hair per style
+  x.fillStyle = ch.hair;
+  if (ch.hairStyle === 'bob') {
+    x.beginPath(); x.ellipse(90, 66, 38, 26, 0, Math.PI, Math.PI * 2); x.fill();
+    x.fillRect(52, 66, 10, 44); x.fillRect(118, 66, 10, 44);
+  } else if (ch.hairStyle === 'pony') {
+    x.beginPath(); x.ellipse(90, 62, 34, 20, 0, Math.PI, Math.PI * 2); x.fill();
+    x.beginPath(); x.ellipse(126, 96, 8, 34, 0.4, 0, Math.PI * 2); x.fill();
+  } else if (ch.hairStyle === 'buzz') {
+    x.beginPath(); x.ellipse(90, 64, 33, 14, 0, Math.PI, Math.PI * 2); x.fill();
+  } else if (ch.hairStyle === 'flat') {
+    x.fillRect(56, 52, 68, 14);
+  } else if (ch.hairStyle === 'spike') {
+    for (let i = 0; i < 6; i++) {
+      x.beginPath(); x.moveTo(58 + i * 12, 62); x.lineTo(64 + i * 12, 38 + (i % 2) * 8); x.lineTo(70 + i * 12, 62); x.fill();
+    }
+  } else { // fade
+    x.beginPath(); x.ellipse(90, 62, 34, 16, 0, Math.PI, Math.PI * 2); x.fill();
+  }
+  // brows, eyes, nose, mouth
+  x.fillStyle = ch.hair;
+  x.fillRect(68, 86, 16, 3); x.fillRect(96, 86, 16, 3);
+  x.fillStyle = '#ffffff';
+  x.beginPath(); x.ellipse(76, 96, 6, 4, 0, 0, Math.PI * 2); x.fill();
+  x.beginPath(); x.ellipse(104, 96, 6, 4, 0, 0, Math.PI * 2); x.fill();
+  x.fillStyle = '#1a1a1a';
+  x.beginPath(); x.arc(76, 96, 2.6, 0, Math.PI * 2); x.fill();
+  x.beginPath(); x.arc(104, 96, 2.6, 0, Math.PI * 2); x.fill();
+  x.strokeStyle = 'rgba(0,0,0,0.35)'; x.lineWidth = 2;
+  x.beginPath(); x.moveTo(90, 100); x.lineTo(88, 112); x.stroke();
+  x.strokeStyle = '#7a3b2e';
+  x.beginPath(); x.moveTo(80, 124); x.quadraticCurveTo(90, 129, 100, 124); x.stroke();
+  // rim light
+  x.strokeStyle = ch.accent; x.lineWidth = 3; x.globalAlpha = 0.7;
+  x.beginPath(); x.ellipse(90, 96, 36, 44, 0, -0.6, 0.9); x.stroke();
+  x.globalAlpha = 1;
+  return c.toDataURL('image/png');
+}
+
+export function createHUD(game) {
   const root = document.getElementById('hud');
   root.innerHTML = `
-    <div id="hud-mission" class="hud-panel mission-panel hidden">
-      <div id="hud-mission-title" class="mission-title"></div>
-      <div id="hud-mission-text" class="mission-text"></div>
-      <div id="hud-mission-dist" class="mission-dist"></div>
-    </div>
-    <div id="hud-counters" class="hud-panel counters"></div>
-    <div id="hud-top-right" class="hud-panel">
-      <div id="hud-wanted" class="stars"></div>
-      <div id="hud-clock" class="clock">5:30 PM</div>
-      <div id="hud-weather" class="weather"></div>
-      <div id="hud-police" class="police-list hidden"></div>
-    </div>
-    <div id="hud-notifs" class="notifs"></div>
-    <div id="hud-arrow" class="arrow hidden">▲</div>
-    <div id="hud-bottom-left" class="hud-panel">
-      <div id="hud-weapon" class="weapon"></div>
-      <div class="bar-row"><span class="bar-label">HP</span><div class="bar"><div id="hud-health-fill"></div></div></div>
-      <div class="bar-row"><span class="bar-label">ARMOR</span><div class="bar"><div id="hud-armor-fill"></div></div></div>
-      <canvas id="minimap" width="190" height="190"></canvas>
-    </div>
-    <div id="hud-bottom-right" class="hud-panel">
-      <div id="hud-radio" class="radio"></div>
-      <div id="hud-speed" class="speed hidden"><span id="hud-speed-num">0</span><span class="speed-unit"> km/h</span>
-        <div class="bar cond"><div id="hud-cond-fill"></div></div>
-        <div id="hud-cond-label" class="cond-label"></div>
-      </div>
-      <div id="hud-cash" class="cash">$0</div>
-      <div id="hud-jobs" class="jobs">Jobs done: 0/12</div>
-    </div>
-    <div id="hud-dialog" class="dialog hidden">
-      <canvas id="hud-portrait" width="72" height="72"></canvas>
-      <div class="dialog-body"><div id="hud-dialog-name" class="dialog-name"></div><div id="hud-dialog-text" class="dialog-text"></div></div>
-    </div>
-    <div id="hud-toast" class="toast hidden"></div>
-    <div id="hud-crosshair" class="crosshair hidden">+</div>
-    <div id="hud-hint" class="hint">WASD move · E enter car · F punch · J / click shoot · R reload · Tab map · M jobs · P pause</div>
-    <div id="screen-title" class="screen">
-      <div class="title-block">
-        <div class="title-kicker">CORAL BAY · A NEON CRIME STORY</div>
-        <h1 class="title-main">NEON<br>BAY</h1>
-        <p class="title-sub">Sun, salt air, and twelve jobs for Vera Solano.<br>Steal cars. Outrun the CBPD. Get paid.</p>
-        <button id="btn-play" class="btn big">▶ &nbsp;START ENGINE</button>
-        <div id="save-slots" class="save-slots"></div>
-        <div class="title-controls">WASD move · Shift run · E enter / exit car · F punch · J or click shoot · R reload<br>Space handbrake · G garage · Tab map · M jobs · C radio · P pause · N mute</div>
-      </div>
-    </div>
-    <div id="screen-briefing" class="screen hidden">
-      <div class="modal">
-        <div class="modal-kicker">JOB FROM VERA SOLANO</div>
-        <div class="briefing-head">
-          <canvas id="briefing-portrait" width="84" height="84"></canvas>
-          <h2 id="briefing-title" class="modal-title"></h2>
+  <div id="hud-top-left">
+    <div id="mission-panel"><div id="mission-title">NEON BAY</div><div id="mission-objective">Visit Vera Solano for the next job</div>
+    <div id="mission-progress"><div id="mission-progress-fill"></div></div><div id="mission-dist"></div></div>
+  </div>
+  <div id="hud-top-right">
+    <div id="stars"></div>
+    <div id="clock-weather"><span id="clock">17:24</span><span id="weather">Clear</span></div>
+    <div id="radio-box"><span id="radio-name">NEON FM 88.4</span><span id="radio-desc">Synthwave nights</span></div>
+  </div>
+  <div id="hud-bottom-left">
+    <canvas id="minimap" width="220" height="220"></canvas>
+    <div id="weapon-box"><span id="weapon-name">FISTS</span><span id="weapon-ammo">—</span></div>
+  </div>
+  <div id="hud-bottom-right">
+    <div id="cash">$0</div>
+    <div id="speedo"><span id="speed">0</span><span id="speed-unit">MPH</span></div>
+    <div id="veh-cond"><div id="veh-cond-fill"></div><span id="veh-cond-label">VEHICLE</span></div>
+  </div>
+  <div id="hud-bottom-center">
+    <div id="hp-bar"><div id="hp-fill"></div><span>HP</span></div>
+    <div id="armor-bar"><div id="armor-fill"></div><span>ARMOR</span></div>
+  </div>
+  <div id="police-list"></div>
+  <div id="dialog"><img id="dialog-portrait" alt=""><div id="dialog-body"><div id="dialog-name"></div><div id="dialog-text"></div><div id="dialog-hint">E — continue</div></div></div>
+  <div id="notifications"></div>
+  <div id="counters"><span id="counter-stash">◆ 0/8 stashes</span><span id="counter-mission">★ 0/12 missions</span><span id="counter-skill">SKILL 0</span></div>
+  <div id="interact-prompt"></div>
+  <div id="screen"></div>
+  <div id="cutscene-bars"><div class="bar top"></div><div class="bar bottom"></div></div>
+  <div id="toast"></div>`;
+
+  const $ = (id) => document.getElementById(id);
+  const H = {
+    game, root,
+    notify(title, text, ms = 4200) {
+      const n = document.createElement('div');
+      n.className = 'notif';
+      n.innerHTML = `<b>${title}</b><span>${text}</span>`;
+      $('notifications').appendChild(n);
+      setTimeout(() => { n.classList.add('out'); setTimeout(() => n.remove(), 500); }, ms);
+    },
+    toast(text, ms = 2600) {
+      const t = $('toast'); t.textContent = text; t.classList.add('show');
+      clearTimeout(H._toastT);
+      H._toastT = setTimeout(() => t.classList.remove('show'), ms);
+    },
+    setObjective(text) { $('mission-objective').textContent = text; },
+    setDistance(d) { $('mission-dist').textContent = d > 999 ? (d / 1000).toFixed(1) + ' km' : Math.round(d) + ' m'; },
+    setProgress(done, total) {
+      const f = $('mission-progress-fill');
+      f.style.width = total > 0 ? Math.min(100, (done / total) * 100) + '%' : '0%';
+      f.style.display = total > 0 ? 'block' : 'none';
+    },
+    showDialog(charKey, text, durSec = 8) {
+      $('dialog-portrait').src = portraitURL(charKey);
+      const ch = CHARACTERS[charKey] || CHARACTERS.vera;
+      $('dialog-name').textContent = `${ch.name} — ${ch.role}`;
+      $('dialog-name').style.color = ch.accent;
+      $('dialog-text').textContent = text;
+      $('dialog').classList.add('show');
+      clearTimeout(H._dlgT);
+      if (durSec > 0) H._dlgT = setTimeout(() => H.hideDialog(), durSec * 1000);
+    },
+    hideDialog() { $('dialog').classList.remove('show'); },
+    showMissionComplete(name, pay) {
+      H.showScreen('complete', `
+        <div class="big-title gold">MISSION PASSED</div>
+        <div class="big-sub">${name}</div>
+        <div class="big-pay">+$${pay.toLocaleString('en-US')}</div>
+        <div class="big-hint">Press E to continue</div>`);
+      setTimeout(() => { if (H.screenKind === 'complete') H.hideScreen(); }, 6000);
+    },
+    showBusted(reason) {
+      H.showScreen('busted', `
+        <div class="big-title red">BUSTED</div>
+        <div class="big-sub">${reason}</div>
+        <div class="big-hint">You lose $250 bail — Press E to respawn</div>`);
+    },
+    showWasted(reason) {
+      H.showScreen('wasted', `
+        <div class="big-title red">WASTED</div>
+        <div class="big-sub">${reason}</div>
+        <div class="big-hint">You lose $250 hospital bill — Press E to respawn</div>`);
+    },
+    screenKind: null,
+    showScreen(kind, html) {
+      H.screenKind = kind;
+      const s = $('screen');
+      // Tag the overlay itself with the kind so CSS can lay each screen
+      // out differently (the garage docks left so the car stays visible).
+      s.className = 'screen-' + kind;
+      s.innerHTML = `<div class="screen-inner screen-${kind}">${html}</div>`;
+      s.classList.add('show');
+    },
+    hideScreen() { H.screenKind = null; $('screen').classList.remove('show'); $('screen').innerHTML = ''; },
+
+    showTitle() {
+      H.showScreen('title', `
+        <div class="title-logo">NEON<span>BAY</span></div>
+        <div class="title-tag">CORAL BAY · A SUN-SOAKED OPEN WORLD</div>
+        <div class="title-menu">
+          <div class="title-item sel">▶ &nbsp;CONTINUE — ${game.state.saveSlot ? 'Slot ' + game.state.saveSlot : 'New Game'}</div>
+          <div class="title-item">NEW GAME</div>
+          <div class="title-item">LOAD GAME — 3 save slots</div>
+          <div class="title-item">OPTIONS — Radio, Music, Controls</div>
         </div>
-        <p id="briefing-text" class="modal-text"></p>
-        <div id="briefing-payout" class="modal-payout"></div>
-        <button id="btn-accept" class="btn big">ACCEPT JOB</button>
-        <button id="btn-decline" class="btn ghost">NOT NOW</button>
-      </div>
-    </div>
-    <div id="screen-pause" class="screen hidden">
-      <div class="modal wide">
-        <div class="modal-kicker">PAUSED</div>
-        <h2 class="modal-title">Take a breath</h2>
-        <div id="pause-stats" class="stats-grid"></div>
-        <button id="btn-resume" class="btn big">RESUME</button>
-        <button id="btn-restart" class="btn">RESTART DAY</button>
-        <button id="btn-quit-title" class="btn ghost">QUIT TO TITLE</button>
-      </div>
-    </div>
-    <div id="screen-busted" class="screen hidden">
-      <div class="modal bad">
-        <div class="modal-kicker">CBPD</div>
-        <h2 class="modal-title">BUSTED</h2>
-        <p id="busted-text" class="modal-text"></p>
-        <button id="btn-busted-ok" class="btn big">PAY AND WALK</button>
-      </div>
-    </div>
-    <div id="screen-wasted" class="screen hidden">
-      <div class="modal bad">
-        <div class="modal-kicker">ST. MARINA HOSPITAL</div>
-        <h2 class="modal-title">WASTED</h2>
-        <p id="wasted-text" class="modal-text"></p>
-        <button id="btn-wasted-ok" class="btn big">LEAVE HOSPITAL</button>
-      </div>
-    </div>
-    <div id="screen-complete" class="screen hidden">
-      <div class="modal good">
-        <div class="modal-banner">★ MISSION PASSED ★</div>
-        <h2 id="complete-title" class="modal-title"></h2>
-        <p id="complete-text" class="modal-text"></p>
-        <div id="complete-unlock" class="modal-unlock"></div>
-        <button id="btn-complete-ok" class="btn big">COLLECT</button>
-      </div>
-    </div>
-    <div id="screen-jobs" class="screen hidden">
-      <div class="modal wide">
-        <div class="modal-kicker">VERA SOLANO — JOBS</div>
-        <h2 class="modal-title">The list</h2>
-        <div id="jobs-list" class="jobs-list"></div>
-        <div class="modal-kicker">SIDE JOBS — REPEATABLE</div>
-        <div id="side-list" class="jobs-list"></div>
-        <button id="btn-jobs-close" class="btn big">CLOSE</button>
-      </div>
-    </div>
-    <div id="screen-map" class="screen hidden">
-      <div class="modal map-modal">
-        <div class="modal-kicker">CORAL BAY — MAP</div>
+        <div class="title-controls">WASD drive / walk · E interact · F enter car · SPACE brake · LMB shoot · R reload · M map · P pause · 1-4 radio</div>
+        <div class="title-foot">An original crime story. Not affiliated with Rockstar Games or GTA.</div>`);
+    },
+    showPause() {
+      const st = game.state.stats;
+      H.showScreen('pause', `
+        <div class="big-title">PAUSED</div>
+        <div class="panel-grid">
+          <div><b>MISSIONS</b><span>${st.missionsDone} / 12 complete</span></div>
+          <div><b>CASH</b><span>${fmtMoney(game.state.cash)}</span></div>
+          <div><b>SIDE JOBS</b><span>${st.jobsDone} done</span></div>
+          <div><b>STASHES</b><span>${game.M.stashFound.size} / 8</span></div>
+          <div><b>PLAY TIME</b><span>${Math.floor(st.playTime / 60)} min</span></div>
+          <div><b>WANTED</b><span>${game.police.stars} ★</span></div>
+        </div>
+        <div class="big-hint">P / ESC — resume · M — map · E — close</div>`);
+    },
+    showMap() {
+      const done = game.M.completed.length;
+      const pct = Math.round((done / 12) * 100);
+      const rows = MISSIONS.map(m => `<div class="map-mission ${game.M.completed.includes(m.id) ? 'done' : ''}">${game.M.completed.includes(m.id) ? '✓' : '○'} ${m.id}. ${m.name} — $${m.pay.toLocaleString('en-US')}</div>`).join('');
+      H.showScreen('map', `
+        <div class="big-title">CORAL BAY — MAP</div>
         <div class="map-wrap">
-          <canvas id="bigmap" width="640" height="500"></canvas>
+          <canvas id="map-canvas" width="460" height="460"></canvas>
           <div class="map-side">
-            <div id="map-complete" class="map-complete"></div>
-            <div id="map-story" class="map-story"></div>
-            <div id="map-stats" class="map-stats"></div>
-            <div class="map-legend">
-              <div><span class="blip yellow">●</span> Mission target</div>
-              <div><span class="blip blue">●</span> CBPD unit</div>
-              <div><span class="blip green">●</span> Cash stash</div>
-              <div><span class="blip pink">●</span> Property</div>
-              <div><span class="blip white">▲</span> You</div>
-            </div>
+            <div class="map-pct">STORY ${pct}% COMPLETE</div>
+            <div class="map-list">${rows}</div>
+            <div class="map-legend">◆ You &nbsp; ● Mission &nbsp; ▲ Police &nbsp; ★ Stash &nbsp; ⌂ Safehouse</div>
+            <div class="map-stats">Cash ${fmtMoney(game.state.cash)} · Jobs ${game.state.stats.jobsDone} · Stashes ${game.M.stashFound.size}/8 · Skill ${game.state.skill}</div>
+            <div class="big-hint">M / E — close map</div>
           </div>
-        </div>
-        <button id="btn-map-close" class="btn big">CLOSE MAP</button>
-      </div>
-    </div>
-    <div id="screen-garage" class="screen hidden">
-      <div class="modal wide">
-        <div class="modal-kicker">MAKO GARAGE</div>
-        <h2 class="modal-title">Tune it up</h2>
-        <div id="garage-list" class="shop-list"></div>
-        <div id="garage-respray" class="respray-row"></div>
-        <button id="btn-garage-close" class="btn big">BACK TO THE STREET</button>
-      </div>
-    </div>
-    <div id="screen-gunshop" class="screen hidden">
-      <div class="modal wide">
-        <div class="modal-kicker">LOCK &amp; LOAD — GUN SHOP</div>
-        <h2 class="modal-title">Tool up</h2>
-        <div id="gunshop-list" class="shop-list"></div>
-        <button id="btn-gunshop-close" class="btn big">BACK TO THE STREET</button>
-      </div>
-    </div>
-  `;
-  return {
-    root,
-    wanted: document.getElementById('hud-wanted'),
-    clock: document.getElementById('hud-clock'),
-    weather: document.getElementById('hud-weather'),
-    police: document.getElementById('hud-police'),
-    cash: document.getElementById('hud-cash'),
-    jobs: document.getElementById('hud-jobs'),
-    mission: document.getElementById('hud-mission'),
-    missionTitle: document.getElementById('hud-mission-title'),
-    missionText: document.getElementById('hud-mission-text'),
-    missionDist: document.getElementById('hud-mission-dist'),
-    counters: document.getElementById('hud-counters'),
-    weapon: document.getElementById('hud-weapon'),
-    minimap: document.getElementById('minimap'),
-    healthFill: document.getElementById('hud-health-fill'),
-    armorFill: document.getElementById('hud-armor-fill'),
-    radio: document.getElementById('hud-radio'),
-    speed: document.getElementById('hud-speed'),
-    speedNum: document.getElementById('hud-speed-num'),
-    condFill: document.getElementById('hud-cond-fill'),
-    condLabel: document.getElementById('hud-cond-label'),
-    notifs: document.getElementById('hud-notifs'),
-    dialog: document.getElementById('hud-dialog'),
-    dialogPortrait: document.getElementById('hud-portrait'),
-    dialogName: document.getElementById('hud-dialog-name'),
-    dialogText: document.getElementById('hud-dialog-text'),
-    arrow: document.getElementById('hud-arrow'),
-    toast: document.getElementById('hud-toast'),
-    crosshair: document.getElementById('hud-crosshair'),
-    hint: document.getElementById('hud-hint'),
-    screens: {
-      title: document.getElementById('screen-title'),
-      briefing: document.getElementById('screen-briefing'),
-      pause: document.getElementById('screen-pause'),
-      busted: document.getElementById('screen-busted'),
-      wasted: document.getElementById('screen-wasted'),
-      complete: document.getElementById('screen-complete'),
-      jobs: document.getElementById('screen-jobs'),
-      map: document.getElementById('screen-map'),
-      garage: document.getElementById('screen-garage'),
-      gunshop: document.getElementById('screen-gunshop'),
+        </div>`);
+      H.drawBigMap();
+    },
+    showGarage() {
+      const rows = GARAGE_UPGRADES.map(u => {
+        const lvl = game.state.upgrades[u.id] || 0;
+        const next = lvl < 3 ? u.levels[lvl + 1] : null;
+        return `<div class="shop-row"><b>${u.name}</b><span>${u.desc}</span><span>LVL ${lvl}/3</span><span>${next ? fmtMoney(next) + ' — press ' + (u.id === 'engine' ? '1' : u.id === 'armor' ? '2' : u.id === 'brakes' ? '3' : '4') : 'MAX'}</span></div>`;
+      }).join('');
+      H.showScreen('garage', `
+        <div class="big-title gold">NEON GARAGE</div>
+        <div class="big-sub">Upgrades apply to your current car · Respray changes paint</div>
+        ${rows}
+        <div class="shop-row"><b>Respray colour</b><span>Red / Gold / Teal / Purple</span><span>$500</span><span>press 5-8</span></div>
+        <div class="big-hint">E — leave garage · Cash ${fmtMoney(game.state.cash)}</div>`);
+    },
+    showGunshop() {
+      H.showScreen('gunshop', `
+        <div class="big-title gold">AMMU-NATION</div>
+        <div class="shop-row"><b>Pistol ammo ×60</b><span>Standard rounds</span><span>$120</span><span>press 1</span></div>
+        <div class="shop-row"><b>Body armor</b><span>Full vest — 100 armor</span><span>$300</span><span>press 2</span></div>
+        <div class="shop-row"><b>Medkit</b><span>Restore 50 HP</span><span>$80</span><span>press 3</span></div>
+        <div class="big-hint">E — leave shop · Cash ${fmtMoney(game.state.cash)}</div>`);
+    },
+    showJobs() {
+      const rows = SIDE_JOBS.map((j, i) => `<div class="shop-row"><b>${j.name}</b><span>${j.desc}</span><span>$${j.pay}</span><span>press ${i + 1}</span></div>`).join('');
+      H.showScreen('jobs', `
+        <div class="big-title">SIDE JOBS</div>
+        ${rows}
+        <div class="big-hint">E — close</div>`);
+    },
+    showSafehouse() {
+      H.showScreen('safehouse', `
+        <div class="big-title gold">SAFEHOUSE</div>
+        <div class="big-sub">Your place above the marina. Save, heal, change clothes.</div>
+        <div class="shop-row"><b>Save game</b><span>Slot 1 / 2 / 3</span><span>—</span><span>press 1-3</span></div>
+        <div class="shop-row"><b>Sleep</b><span>Heal to full, advance to morning</span><span>—</span><span>press 4</span></div>
+        <div class="shop-row"><b>Change outfit</b><span>Neon / Street / Classic</span><span>—</span><span>press 5</span></div>
+        <div class="big-hint">E — leave safehouse</div>`);
+    },
+    showBriefing(mission) {
+      const giver = CHARACTERS[mission.giver];
+      H.showScreen('briefing', `
+        <div class="briefing-wrap">
+          <img class="briefing-portrait" src="${portraitURL(mission.giver)}">
+          <div>
+            <div class="big-title gold">${mission.name}</div>
+            <div class="big-sub">${giver.name} — ${giver.role}</div>
+            <p class="briefing-text">${mission.blurb}</p>
+            <div class="big-pay">REWARD $${mission.pay.toLocaleString('en-US')}</div>
+            <div class="big-hint">E — accept mission · ESC — decline</div>
+          </div>
+        </div>`);
+    },
+    cutscene(on) { $('cutscene-bars').classList.toggle('show', !!on); },
+
+    // --- minimap -------------------------------------------------------------
+    drawMinimap(world, player, police, missionTarget, stashPts) {
+      const cv = $('minimap'), x = cv.getContext('2d');
+      const S = 220, range = 260;
+      x.clearRect(0, 0, S, S);
+      x.fillStyle = 'rgba(10,14,20,0.82)'; x.fillRect(0, 0, S, S);
+      const toMap = (wx, wz) => [S / 2 + (wx - player.x) * (S / range), S / 2 + (wz - player.z) * (S / range)];
+      // water
+      x.fillStyle = '#1d5f7a';
+      const [wx0] = toMap(330, 0);
+      if (wx0 < S) x.fillRect(Math.max(0, wx0), 0, S - Math.max(0, wx0), S);
+      // roads (lanes run between buildings at half-block offsets)
+      x.strokeStyle = 'rgba(200,200,200,0.5)'; x.lineWidth = 2;
+      for (let i = -10; i <= 10; i++) {
+        const [ax] = toMap(i * 46 + 23, 0); const [, bz] = toMap(0, i * 46 + 23);
+        x.beginPath(); x.moveTo(ax, 0); x.lineTo(ax, S); x.stroke();
+        x.beginPath(); x.moveTo(0, bz); x.lineTo(S, bz); x.stroke();
+      }
+      // park + island
+      x.fillStyle = '#3f7a34';
+      const [px, pz] = toMap(-120, 70); x.fillRect(px - 18, pz - 18, 36, 36);
+      x.fillStyle = '#55703f';
+      const [ix, iz] = toMap(560, -60); x.beginPath(); x.arc(ix, iz, 16, 0, 7); x.fill();
+      // buildings
+      x.fillStyle = 'rgba(120,130,150,0.55)';
+      for (const c of world.colliders) {
+        const [x0, z0] = toMap(c.x0, c.z0); const [x1, z1] = toMap(c.x1, c.z1);
+        if (x1 < 0 || z1 < 0 || x0 > S || z0 > S) continue;
+        x.fillRect(x0, z0, Math.max(2, x1 - x0), Math.max(2, z1 - z0));
+      }
+      // stashes
+      x.fillStyle = '#7dff6b';
+      for (const s of stashPts) { const [sx, sz] = toMap(s.x, s.z); x.fillRect(sx - 2, sz - 2, 4, 4); }
+      // safehouse
+      x.fillStyle = '#ffffff';
+      const [hx, hz] = toMap(-32, 180); x.font = 'bold 12px Arial'; x.fillText('⌂', hx - 5, hz + 4);
+      // mission target
+      if (missionTarget) {
+        const [mx, mz] = toMap(missionTarget.x, missionTarget.z);
+        x.fillStyle = '#ffd166';
+        x.beginPath(); x.arc(mx, mz, 6, 0, 7); x.fill();
+        x.fillStyle = '#000'; x.font = 'bold 9px Arial'; x.fillText('!', mx - 1.5, mz + 3);
+      }
+      // police
+      const blink = Math.floor(performance.now() / 300) % 2 === 0;
+      for (const u of police.units) {
+        if (u.v.dead) continue;
+        const [ux, uz] = toMap(u.v.x, u.v.z);
+        x.fillStyle = blink ? '#ff4444' : '#4488ff';
+        x.beginPath(); x.moveTo(ux, uz - 5); x.lineTo(ux + 4, uz + 4); x.lineTo(ux - 4, uz + 4); x.closePath(); x.fill();
+      }
+      // player arrow
+      x.save();
+      x.translate(S / 2, S / 2); x.rotate(-player.heading);
+      x.fillStyle = '#ffffff';
+      x.beginPath(); x.moveTo(0, -8); x.lineTo(6, 7); x.lineTo(-6, 7); x.closePath(); x.fill();
+      x.restore();
+      // border
+      x.strokeStyle = '#ffd166'; x.lineWidth = 3;
+      x.beginPath(); x.arc(S / 2, S / 2, S / 2 - 2, 0, 7); x.stroke();
+    },
+
+    drawBigMap() {
+      const cv = $('map-canvas');
+      if (!cv) return;
+      const x = cv.getContext('2d');
+      const S = 460;
+      x.fillStyle = '#0d1420'; x.fillRect(0, 0, S, S);
+      const toMap = (wx, wz) => [((wx + 460) / 920) * S, ((wz + 460) / 920) * S];
+      x.fillStyle = '#1d5f7a';
+      const [wx0] = toMap(330, 0); x.fillRect(wx0, 0, S - wx0, S);
+      x.strokeStyle = 'rgba(200,200,200,0.45)'; x.lineWidth = 1.5;
+      for (let i = -10; i <= 10; i++) {
+        const [ax] = toMap(i * 46 + 23, 0); const [, bz] = toMap(0, i * 46 + 23);
+        x.beginPath(); x.moveTo(ax, 0); x.lineTo(ax, S); x.stroke();
+        x.beginPath(); x.moveTo(0, bz); x.lineTo(S, bz); x.stroke();
+      }
+      x.fillStyle = '#3f7a34';
+      const [px, pz] = toMap(-120, 70); x.fillRect(px - 40, pz - 40, 80, 80);
+      x.fillStyle = '#55703f';
+      const [ix, iz] = toMap(560, -60); x.beginPath(); x.arc(ix, iz, 34, 0, 7); x.fill();
+      x.fillStyle = 'rgba(120,130,150,0.5)';
+      for (const c of game.world.colliders) {
+        const [x0, z0] = toMap(c.x0, c.z0); const [x1, z1] = toMap(c.x1, c.z1);
+        x.fillRect(x0, z0, Math.max(1.5, x1 - x0), Math.max(1.5, z1 - z0));
+      }
+      x.font = 'bold 13px Arial';
+      const put = (wx, wz, sym, col) => { const [a, b] = toMap(wx, wz); x.fillStyle = col; x.fillText(sym, a - 6, b + 5); };
+      put(-32, 180, '⌂', '#ffffff');
+      for (const st of game.stashList || []) { if (!game.M.stashFound.has(st.x + ',' + st.z)) put(st.x, st.z, '★', '#7dff6b'); }
+      if (game.missionTarget) put(game.missionTarget.x, game.missionTarget.z, '●', '#ffd166');
+      for (const u of game.police.units) if (!u.v.dead) put(u.v.x, u.v.z, '▲', '#ff4444');
+      put(game.player.x, game.player.z, '◆', '#ffffff');
+      x.strokeStyle = '#ffd166'; x.lineWidth = 2; x.strokeRect(1, 1, S - 2, S - 2);
+    },
+
+    // --- per-frame HUD sync ----------------------------------------------------
+    update(state) {
+      $('cash').textContent = fmtMoney(state.cash);
+      $('clock').textContent = fmtClock(state.hour);
+      $('weather').textContent = WEATHER_NAMES[state.weather] + (state.rain > 0.5 ? ' ☔' : '');
+      const r = RADIO[state.radio];
+      $('radio-name').textContent = r.name;
+      $('radio-name').style.color = r.color;
+      $('radio-desc').textContent = r.desc;
+      // stars
+      let stars = '';
+      for (let i = 0; i < 5; i++) stars += `<span class="star ${i < state.stars ? 'on' : ''}">★</span>`;
+      $('stars').innerHTML = stars;
+      // weapon
+      $('weapon-name').textContent = state.weapon;
+      $('weapon-ammo').textContent = state.weapon === 'FISTS' ? '—' : `${state.ammo} / ${state.reserve}`;
+      // bars
+      $('hp-fill').style.width = state.hp + '%';
+      $('armor-fill').style.width = state.armor + '%';
+      $('hp-fill').style.background = state.hp < 30 ? '#ff3333' : '#4dff6b';
+      // speedo
+      const v = state.vehicle;
+      $('speed').textContent = v ? Math.round(Math.abs(v.speed) * 2.237) : '0';
+      $('veh-cond').style.display = v ? 'flex' : 'none';
+      if (v) {
+        const pct = Math.max(0, (v.hp / v.maxHp) * 100);
+        $('veh-cond-fill').style.width = pct + '%';
+        $('veh-cond-fill').style.background = pct < 30 ? '#ff3333' : pct < 60 ? '#ffb347' : '#4dff6b';
+        $('veh-cond-label').textContent = `${v.def.name.toUpperCase()} · ${Math.round(pct)}%`;
+      }
+      // counters
+      $('counter-stash').textContent = `◆ ${state.stashes}/8 stashes`;
+      $('counter-mission').textContent = `★ ${state.missionsDone}/12 missions`;
+      $('counter-skill').textContent = `SKILL ${state.skill}`;
+      // police list
+      const pl = $('police-list');
+      const units = state.policeUnits;
+      if (units.length || state.heli) {
+        let html = '<div class="police-head">CBPD PURSUIT</div>';
+        for (const u of units) html += `<div class="police-row"><span>${u.name}</span><span>${u.dist}m</span><span class="st-${u.status.replace(/ /g, '')}">${u.status}</span></div>`;
+        if (state.heli) html += `<div class="police-row"><span>${state.heli.name}</span><span>${state.heli.dist}m</span><span class="st-SEARCHLIGHT">${state.heli.status}</span></div>`;
+        pl.innerHTML = html;
+        pl.style.display = 'block';
+      } else pl.style.display = 'none';
+      // interact prompt — hidden while a dialog is open (the dialog's own
+      // "E — continue" is the prompt then; the two boxes overlap otherwise).
+      const ip = $('interact-prompt');
+      const dialogOpen = $('dialog').classList.contains('show');
+      if (state.prompt && !dialogOpen) { ip.textContent = state.prompt; ip.style.display = 'block'; }
+      else ip.style.display = 'none';
+      // mission title
+      $('mission-title').textContent = state.missionName || 'NEON BAY';
     },
   };
-}
-
-let toastTimer = null;
-export function showToast(hud, text, ms = 4200) {
-  hud.toast.textContent = text;
-  hud.toast.classList.remove('hidden');
-  if (toastTimer) clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => hud.toast.classList.add('hidden'), ms);
-}
-
-export function addNotification(hud, text, kind = '') {
-  const el = document.createElement('div');
-  el.className = 'notif ' + kind;
-  el.textContent = text;
-  hud.notifs.prepend(el);
-  while (hud.notifs.children.length > 4) hud.notifs.removeChild(hud.notifs.lastChild);
-  setTimeout(() => { el.classList.add('fade'); }, 4600);
-  setTimeout(() => { if (el.parentNode) el.parentNode.removeChild(el); }, 5400);
-}
-
-let dialogTimer = null;
-export function showDialog(hud, who, name, text, ms = 5200) {
-  drawPortrait(hud.dialogPortrait, who);
-  hud.dialogName.textContent = name;
-  hud.dialogText.textContent = text;
-  hud.dialog.classList.remove('hidden');
-  if (dialogTimer) clearTimeout(dialogTimer);
-  dialogTimer = setTimeout(() => hud.dialog.classList.add('hidden'), ms);
-}
-
-export function hideDialog(hud) {
-  hud.dialog.classList.add('hidden');
-  if (dialogTimer) clearTimeout(dialogTimer);
-}
-
-export function showScreen(hud, name) {
-  for (const key of Object.keys(hud.screens)) {
-    hud.screens[key].classList.toggle('hidden', key !== name);
-  }
-  hud.root.classList.toggle('in-game', name === null);
-}
-
-export function hideAllScreens(hud) {
-  showScreen(hud, null);
-}
-
-export function updateHud(hud, snap) {
-  let stars = '';
-  for (let i = 0; i < 5; i += 1) stars += i < snap.wanted ? '★' : '☆';
-  hud.wanted.textContent = stars;
-  hud.wanted.classList.toggle('hot', snap.wanted >= 3);
-  hud.clock.textContent = formatClock(snap.timeOfDay);
-  hud.weather.textContent = snap.weather === 'rain' ? '☂ Rain' : (snap.golden ? '☀ Golden hour' : snap.night ? '☾ Night' : '☀ Clear');
-  hud.cash.textContent = formatCash(snap.cash);
-  hud.jobs.textContent = 'Jobs done: ' + snap.jobsDone + '/' + snap.jobsTotal;
-  hud.healthFill.style.width = clamp(snap.health, 0, 100) + '%';
-  hud.healthFill.style.background = snap.health > 50 ? '#37d67a' : snap.health > 25 ? '#ffb02e' : '#ff3b30';
-  hud.armorFill.style.width = clamp(snap.armor, 0, 100) + '%';
-  hud.armorFill.style.background = '#4d9fff';
-  hud.weapon.textContent = snap.armed ? ('🔫 ' + snap.weaponName + '  ' + snap.ammo + ' / ' + snap.reserveAmmo) : '👊 Fists';
-  hud.radio.textContent = '♪ ' + snap.radio;
-  hud.crosshair.classList.toggle('hidden', !snap.armed);
-  if (snap.inCar) {
-    hud.speed.classList.remove('hidden');
-    hud.speedNum.textContent = String(Math.round(snap.speedKmh));
-    hud.speed.classList.toggle('fast', snap.speedKmh > 90);
-    hud.condFill.style.width = clamp(snap.carHealth, 0, 100) + '%';
-    hud.condFill.style.background = snap.carHealth > 50 ? '#37d67a' : snap.carHealth > 25 ? '#ffb02e' : '#ff3b30';
-    hud.condLabel.textContent = snap.carName + ' · ' + Math.round(snap.carHealth) + '%';
-  } else {
-    hud.speed.classList.add('hidden');
-  }
-  if (snap.objective) {
-    hud.mission.classList.remove('hidden');
-    hud.missionTitle.textContent = snap.objective.title;
-    hud.missionText.textContent = snap.objective.text;
-    hud.missionDist.textContent = snap.objective.distance != null
-      ? Math.round(snap.objective.distance) + ' m' : '';
-  } else {
-    hud.mission.classList.add('hidden');
-  }
-  hud.counters.textContent = '◆ Stashes ' + snap.stashes + '/' + snap.stashTotal
-    + '   ·   Driving Lv ' + snap.skills.driving
-    + '   ·   Shooting Lv ' + snap.skills.shooting
-    + '   ·   Stamina Lv ' + snap.skills.stamina;
-  // Police unit list: named units with distance and status.
-  if (snap.policeUnits && snap.policeUnits.length > 0) {
-    hud.police.classList.remove('hidden');
-    hud.police.innerHTML = snap.policeUnits.slice(0, 6).map((u) =>
-      `<div class="unit-row"><span class="unit-name">${u.name}</span><span class="unit-status ${u.statusClass}">${u.status}</span><span class="unit-dist">${u.dist} m</span></div>`).join('');
-  } else {
-    hud.police.classList.add('hidden');
-  }
-  if (snap.arrowAngle != null) {
-    hud.arrow.classList.remove('hidden');
-    hud.arrow.style.transform = `translate(-50%,-50%) rotate(${snap.arrowAngle}rad)`;
-  } else {
-    hud.arrow.classList.add('hidden');
-  }
-  hud.hint.classList.toggle('hidden', snap.mode !== 'play');
-}
-
-/** Draw the live minimap: roads, beach, water, island, blips. */
-export function drawMinimap(hud, snap) {
-  const canvas = hud.minimap;
-  const ctx = canvas.getContext('2d');
-  const W = canvas.width;
-  const H = canvas.height;
-  const scale = W / 620;
-  const toX = (x) => (x + 290) * scale;
-  const toY = (z) => (z + 290) * scale;
-  ctx.clearRect(0, 0, W, H);
-  ctx.fillStyle = '#0e6f8e';
-  ctx.fillRect(0, 0, W, H);
-  ctx.fillStyle = '#d9b380';
-  ctx.fillRect(toX(285), 0, W - toX(285), H);
-  ctx.fillStyle = '#3a3f45';
-  ctx.fillRect(0, 0, toX(285), H);
-  ctx.fillStyle = '#3f7a44';
-  ctx.beginPath();
-  ctx.arc(toX(415), toY(-60), 62 * scale, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = '#c9c9c9';
-  ctx.lineWidth = 3;
-  for (const x of snap.avenues) {
-    ctx.beginPath(); ctx.moveTo(toX(x), toY(-275)); ctx.lineTo(toX(x), toY(215)); ctx.stroke();
-  }
-  for (const z of snap.streets) {
-    ctx.beginPath(); ctx.moveTo(toX(-275), toY(z)); ctx.lineTo(toX(285), toY(z)); ctx.stroke();
-  }
-  ctx.strokeStyle = '#ffc46b';
-  ctx.lineWidth = 2.5;
-  ctx.beginPath(); ctx.moveTo(toX(300), toY(-60)); ctx.lineTo(toX(360), toY(-60)); ctx.stroke();
-  if (snap.target) {
-    const tx = toX(snap.target.x);
-    const ty = toY(snap.target.z);
-    ctx.fillStyle = '#ffd23e';
-    ctx.beginPath(); ctx.arc(tx, ty, 6, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(tx, ty, 9, 0, Math.PI * 2); ctx.stroke();
-  }
-  ctx.fillStyle = '#7CFC00';
-  for (const s of snap.stashes || []) {
-    ctx.fillRect(toX(s.x) - 2.5, toY(s.z) - 2.5, 5, 5);
-  }
-  ctx.fillStyle = '#4d9fff';
-  for (const c of snap.cops) {
-    ctx.beginPath(); ctx.arc(toX(c.x), toY(c.z), 3.5, 0, Math.PI * 2); ctx.fill();
-  }
-  ctx.fillStyle = 'rgba(255,255,255,0.75)';
-  for (const c of snap.traffic) {
-    ctx.fillRect(toX(c.x) - 1.5, toY(c.z) - 1.5, 3, 3);
-  }
-  const px = toX(snap.playerX);
-  const py = toY(snap.playerZ);
-  ctx.save();
-  ctx.translate(px, py);
-  ctx.rotate(snap.playerHeading);
-  ctx.fillStyle = '#ffffff';
-  ctx.strokeStyle = '#111111';
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.moveTo(0, -8); ctx.lineTo(5.5, 6); ctx.lineTo(0, 3); ctx.lineTo(-5.5, 6); ctx.closePath();
-  ctx.fill(); ctx.stroke();
-  ctx.restore();
-  ctx.strokeStyle = 'rgba(255,255,255,0.5)';
-  ctx.lineWidth = 2;
-  ctx.strokeRect(1, 1, W - 2, H - 2);
-  ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 11px Arial';
-  ctx.fillText('N', W / 2 - 4, 13);
-}
-
-/** The full map screen: the whole city, big, with every marker and label. */
-export function drawBigMap(hud, snap) {
-  const canvas = document.getElementById('bigmap');
-  if (!canvas) return;
-  const ctx = canvas.getContext('2d');
-  const W = canvas.width;
-  const H = canvas.height;
-  const scale = W / 640;
-  const toX = (x) => (x + 300) * scale;
-  const toY = (z) => (z + 300) * scale * (H / W) * 1.0;
-  ctx.fillStyle = '#0e6f8e';
-  ctx.fillRect(0, 0, W, H);
-  ctx.fillStyle = '#d9b380';
-  ctx.fillRect(toX(285), 0, W - toX(285), H);
-  ctx.fillStyle = '#33383f';
-  ctx.fillRect(0, 0, toX(285), H);
-  // City blocks.
-  ctx.fillStyle = '#454b54';
-  for (let ai = 0; ai < snap.avenues.length - 1; ai += 1) {
-    for (let si = 0; si < snap.streets.length - 1; si += 1) {
-      const x0 = toX(snap.avenues[ai] + 6);
-      const z0 = toY(snap.streets[si] + 6);
-      const w = (snap.avenues[ai + 1] - snap.avenues[ai] - 12) * scale;
-      const h = (snap.streets[si + 1] - snap.streets[si] - 12) * scale;
-      ctx.fillRect(x0, z0, w, h);
-    }
-  }
-  ctx.fillStyle = '#3f7a44';
-  ctx.beginPath();
-  ctx.arc(toX(415), toY(-60), 62 * scale, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = '#e8e8e8';
-  ctx.lineWidth = 4;
-  for (const x of snap.avenues) {
-    ctx.beginPath(); ctx.moveTo(toX(x), toY(-275)); ctx.lineTo(toX(x), toY(215)); ctx.stroke();
-  }
-  for (const z of snap.streets) {
-    ctx.beginPath(); ctx.moveTo(toX(-275), toY(z)); ctx.lineTo(toX(285), toY(z)); ctx.stroke();
-  }
-  ctx.strokeStyle = '#ffc46b';
-  ctx.lineWidth = 4;
-  ctx.beginPath(); ctx.moveTo(toX(300), toY(-60)); ctx.lineTo(toX(360), toY(-60)); ctx.stroke();
-  // Place labels.
-  ctx.font = 'bold 13px Arial';
-  ctx.fillStyle = '#ffffff';
-  ctx.textAlign = 'center';
-  for (const p of snap.places || []) {
-    ctx.fillText(p.label, toX(p.x), toY(p.z) - 8);
-  }
-  ctx.textAlign = 'left';
-  ctx.fillStyle = '#9fd8ff';
-  ctx.font = 'bold 14px Arial';
-  ctx.fillText('CORAL BAY', toX(-260), toY(-262));
-  ctx.fillStyle = '#ffd27a';
-  ctx.fillText('THE BAY', toX(330), toY(120));
-  ctx.fillText('CORAL CAY', toX(375), toY(-100));
-  // Stashes.
-  ctx.fillStyle = '#7CFC00';
-  for (const s of snap.stashes || []) {
-    ctx.beginPath(); ctx.arc(toX(s.x), toY(s.z), 5, 0, Math.PI * 2); ctx.fill();
-  }
-  // Properties.
-  ctx.fillStyle = '#ff2e88';
-  for (const p of snap.properties || []) {
-    ctx.beginPath(); ctx.arc(toX(p.x), toY(p.z), 6, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(toX(p.x), toY(p.z), 9, 0, Math.PI * 2); ctx.stroke();
-  }
-  // Mission target.
-  if (snap.target) {
-    const tx = toX(snap.target.x);
-    const ty = toY(snap.target.z);
-    ctx.fillStyle = '#ffd23e';
-    ctx.beginPath(); ctx.arc(tx, ty, 8, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 2.5;
-    ctx.beginPath(); ctx.arc(tx, ty, 12, 0, Math.PI * 2); ctx.stroke();
-  }
-  // Police.
-  ctx.fillStyle = '#4d9fff';
-  for (const c of snap.cops) {
-    ctx.beginPath(); ctx.arc(toX(c.x), toY(c.z), 5, 0, Math.PI * 2); ctx.fill();
-  }
-  // Player.
-  const px = toX(snap.playerX);
-  const py = toY(snap.playerZ);
-  ctx.save();
-  ctx.translate(px, py);
-  ctx.rotate(snap.playerHeading);
-  ctx.fillStyle = '#ffffff';
-  ctx.strokeStyle = '#111111';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(0, -11); ctx.lineTo(8, 8); ctx.lineTo(0, 4); ctx.lineTo(-8, 8); ctx.closePath();
-  ctx.fill(); ctx.stroke();
-  ctx.restore();
+  return H;
 }

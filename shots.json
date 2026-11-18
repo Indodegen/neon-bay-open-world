@@ -1,1 +1,1 @@
-[{"name":"1-cover.jpg","query":"?shot=cover&seed=1"},{"name":"2-night.jpg","query":"?shot=night&seed=1"},{"name":"3-garage.jpg","query":"?shot=garage&seed=1"},{"name":"4-map.jpg","query":"?shot=map&seed=1"}]
+[{"name":"1-cover.jpg","quality":82,"query":"?shot=cover&seed=1","settle_ms":2500},{"name":"2-night.jpg","quality":82,"query":"?shot=night&seed=1","settle_ms":2500},{"name":"3-garage.jpg","quality":82,"query":"?shot=garage&seed=1","settle_ms":2500},{"name":"4-map.jpg","quality":82,"query":"?shot=map&seed=1","settle_ms":1200}]

@@ -1,8 +1,10 @@
-// A tiny static server for game/ (Node 22, standard library only), so NEON BAY
-// can be played locally without a build step: `node serve.ts` serves game/ on
-// http://localhost:8080. It sends the MIME types a browser game needs, refuses
-// any path outside game/, and otherwise does nothing clever: this is a
-// development convenience, not a web server for the internet.
+// NEON BAY — serve.ts
+// A tiny static server for game/ (Node 22, standard library only), so the
+// entry can be played locally without a build step:
+//   node serve.ts            -> http://localhost:8080
+//   node serve.ts --port 8090
+// Serves only files under game/, with the MIME types a browser game needs.
+
 import { createReadStream, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { extname, join, normalize, resolve, sep } from 'node:path';
@@ -39,6 +41,12 @@ const MIME: Record<string, string> = {
 };
 
 createServer((request, response) => {
+  // Static files only: anything that is not a plain GET/HEAD gets a 405
+  // instead of silently serving content for a POST/PUT.
+  if (request.method !== 'GET' && request.method !== 'HEAD') {
+    response.writeHead(405, { 'allow': 'GET, HEAD' }).end('method not allowed');
+    return;
+  }
   const url = new URL(request.url ?? '/', 'http://localhost');
   let pathname: string;
   try {
@@ -67,7 +75,9 @@ createServer((request, response) => {
     'content-length': size,
     'cache-control': 'no-store',
   });
+  // HEAD asks for headers only: end without a body.
+  if (request.method === 'HEAD') { response.end(); return; }
   createReadStream(file).pipe(response);
 }).listen(port, '127.0.0.1', () => {
-  console.log(`game/ is on http://localhost:${port}`);
+  console.log(`NEON BAY game/ is on http://localhost:${port}`);
 });

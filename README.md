@@ -1,5 +1,9 @@
 # NEON BAY — Coral Bay Open World
 
+[![make.fun · gta6-01](https://make.fun/badge/gta6-01.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
+[![rank](https://make.fun/badge/gta6-01/Indodegen/neon-bay-open-world/rank.svg)](https://make.fun/bounty/gta6-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
+[![reward](https://make.fun/badge/gta6-01/Indodegen/neon-bay-open-world/reward.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
+
 A complete 3D open-world crime game for the make.fun **gta6-01 "Make GTA 6"**
 bounty. An original sun-soaked coastal city, "Coral Bay": no GTA assets,
 names or story — everything here is original work.

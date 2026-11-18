@@ -1,14 +1,9 @@
-// NEON BAY — a sun-soaked open-world crime game for make.fun gta6-01.
-// Round 3 entry. Node 22, standard library only. This program hands the game in:
-// it copies game/ and screenshots/ from beside this file into /output and writes
-// /output/dossier.json with the vendored make.fun library (vendor/makefun-game.ts).
-// The game itself is plain static files under game/ — game/index.html plus ES
-// modules under game/src/ — and plays offline in desktop Chrome with no network
-// request, no build step and no installed dependency.
+// NEON BAY — the entry program. It copies this repository's game/ and
+// screenshots/ into the grader's output directory and writes dossier.json
+// with the kit's vendored library, exactly as the bounty requires.
 //
-// Serve it locally with `node serve.ts`, then open http://localhost:8080.
-// Outside the grader's container, MAKEFUN_OUTPUT_DIR stands in for /output:
-//   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
+// Local check:  mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
+// Local play:   node serve.ts, then open http://localhost:8080
 
 import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -25,11 +20,10 @@ if (existsSync(join(here, 'screenshots'))) {
   cpSync(join(here, 'screenshots'), join(out, 'screenshots'), { recursive: true });
 }
 
-// The scorer's own caps (reference/gate.json): only text_max_bytes shapes the
-// bytes; the other limits refuse an entry the scorer would refuse — more than 4
-// screenshots or one over 256 KiB; more than 993 files in game/ or 48 MiB of
-// game files in all, or a path under game/ over 1000 bytes. game/ counts beside
-// /output's own 1000-entry cap, its screenshots/ and dossier.json.
+// The scorer's caps: only text_max_bytes shapes the dossier text; the rest
+// refuse an entry the scorer would refuse (more than 4 screenshots or one
+// over 256 KiB; more than 993 files in game/ or 48 MiB of game files in all,
+// or a path under game/ over 1000 bytes).
 writeFileSync(
   join(out, 'dossier.json'),
   buildDossier(out, {

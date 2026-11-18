@@ -3,17 +3,165 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>NEON BAY — Open-World Crime Game</title>
+<title>NEON BAY — Open-World Crime in Coral Bay</title>
+<link rel="icon" href="data:,">
 <style>
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #0a0e18; }
-  #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: crosshair; }
-  /* Read aloud, never shown: the status line screen readers announce. */
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0b1026; font-family: Arial, Helvetica, sans-serif; }
+  #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  #hud { position: fixed; inset: 0; pointer-events: none; color: #fff; z-index: 5; }
+  .hidden { display: none !important; }
+  .hud-panel { position: absolute; text-shadow: 0 2px 6px rgba(0,0,0,.8); }
+  /* GTA 6 layout: mission top-left, stars top-right, cash bottom-right,
+     weapon above the round minimap bottom-left. */
+  #hud-mission { top: 16px; left: 18px; max-width: 430px; text-align: left;
+    background: rgba(8,10,24,0.62); border: 1px solid rgba(255,210,62,0.55); border-radius: 10px;
+    padding: 9px 16px 11px; backdrop-filter: blur(3px); }
+  .mission-title { font-size: 12px; letter-spacing: 2px; color: #ffd23e; font-weight: bold; }
+  .mission-text { font-size: 16px; font-weight: bold; margin-top: 2px; }
+  .mission-dist { font-size: 13px; opacity: 0.9; margin-top: 2px; }
+  #hud-counters { top: 108px; left: 18px; font-size: 12px; opacity: 0.92; letter-spacing: 0.5px; }
+  #hud-top-right { top: 16px; right: 18px; text-align: right; }
+  .stars { font-size: 32px; letter-spacing: 4px; color: #ffd23e; line-height: 1; }
+  .stars.hot { color: #ff3b30; animation: pulse 0.7s infinite alternate; }
+  @keyframes pulse { from { opacity: 1; } to { opacity: 0.55; } }
+  .clock { font-size: 16px; font-weight: bold; margin-top: 6px; letter-spacing: 1px; }
+  .weather { font-size: 12px; opacity: 0.85; margin-top: 2px; }
+  .police-list { margin-top: 10px; background: rgba(8,10,24,0.66); border: 1px solid rgba(77,159,255,0.55);
+    border-radius: 8px; padding: 8px 10px; text-align: left; min-width: 250px; }
+  .unit-row { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; padding: 2px 0; }
+  .unit-name { font-weight: bold; color: #9fd8ff; }
+  .unit-status { font-weight: bold; }
+  .unit-status.pursuit { color: #ff5e5e; }
+  .unit-status.ramming { color: #ff3b30; }
+  .unit-status.roadblock { color: #ffb02e; }
+  .unit-status.search { color: #ffd23e; }
+  .unit-status.patrol { color: #7CFC00; }
+  .unit-dist { opacity: 0.85; }
+  #hud-bottom-left { bottom: 16px; left: 18px; }
+  .weapon { font-size: 15px; font-weight: bold; margin-bottom: 6px; text-shadow: 0 2px 6px rgba(0,0,0,.9); }
+  .bar-row { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; }
+  .bar-label { font-size: 10px; font-weight: bold; width: 44px; text-align: right; letter-spacing: 1px; }
+  .bar { width: 140px; height: 11px; background: rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.5);
+    border-radius: 6px; overflow: hidden; }
+  #hud-health-fill { height: 100%; width: 100%; background: #37d67a; transition: width 0.2s; }
+  #hud-armor-fill { height: 100%; width: 0%; background: #4d9fff; transition: width 0.2s; }
+  #minimap { width: 190px; height: 190px; border-radius: 50%; border: 3px solid rgba(255,255,255,0.75);
+    box-shadow: 0 4px 18px rgba(0,0,0,.55); background: #0e6f8e; display: block; margin-top: 4px; }
+  #hud-bottom-right { bottom: 16px; right: 22px; text-align: right; }
+  .radio { font-size: 13px; font-weight: bold; color: #ffd27a; margin-bottom: 4px; }
+  #hud-speed { font-size: 46px; font-weight: bold; text-shadow: 0 2px 8px rgba(0,0,0,.85); line-height: 1; }
+  #hud-speed.fast { color: #ff5e5e; }
+  .speed-unit { font-size: 16px; opacity: 0.85; }
+  .bar.cond { width: 170px; height: 9px; margin: 5px 0 2px auto; }
+  #hud-cond-fill { height: 100%; width: 100%; background: #37d67a; }
+  .cond-label { font-size: 11px; opacity: 0.9; }
+  .cash { font-size: 32px; font-weight: bold; color: #7CFC00; letter-spacing: 1px; margin-top: 6px; }
+  .jobs { font-size: 13px; opacity: 0.9; margin-top: 3px; }
+  .notifs { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); width: 520px;
+    text-align: center; display: flex; flex-direction: column; gap: 6px; align-items: center; }
+  .notif { background: rgba(8,10,24,0.82); border: 1px solid rgba(255,255,255,0.4); border-radius: 8px;
+    padding: 8px 18px; font-size: 15px; font-weight: bold; transition: opacity 0.8s; }
+  .notif.good { border-color: #7CFC00; color: #b6ff7a; }
+  .notif.gold { border-color: #ffd23e; color: #ffe9a0; }
+  .notif.bad { border-color: #ff3b30; color: #ffb0a0; }
+  .notif.fade { opacity: 0; }
+  #hud-arrow { position: absolute; top: 128px; left: 50%; font-size: 26px; color: #ffd23e;
+    text-shadow: 0 0 10px rgba(255,210,62,.9), 0 2px 4px rgba(0,0,0,.8); }
+  .toast { position: absolute; bottom: 130px; left: 50%; transform: translateX(-50%);
+    background: rgba(8,10,24,0.78); border: 1px solid rgba(255,255,255,0.35); border-radius: 8px;
+    padding: 10px 20px; font-size: 15px; font-weight: bold; max-width: 640px; text-align: center; }
+  .crosshair { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    font-size: 26px; color: #fff; text-shadow: 0 0 6px #000; }
+  .hint { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); font-size: 12px;
+    opacity: 0.75; text-shadow: 0 1px 4px rgba(0,0,0,.9); white-space: nowrap; }
+  .dialog { position: absolute; bottom: 52px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 12px; align-items: center; background: rgba(8,10,24,0.85);
+    border: 1px solid rgba(255,46,136,0.6); border-radius: 12px; padding: 10px 18px 10px 10px;
+    max-width: 620px; }
+  #hud-portrait { border-radius: 8px; border: 2px solid rgba(255,210,62,0.7); flex: none; }
+  .dialog-name { font-size: 13px; font-weight: bold; color: #ffd23e; letter-spacing: 1px; }
+  .dialog-text { font-size: 15px; line-height: 1.45; margin-top: 2px; }
+  .screen { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: rgba(5, 8, 20, 0.45); pointer-events: auto; }
+  #screen-title { background: linear-gradient(180deg, rgba(10,8,28,0.25) 0%, rgba(10,8,28,0.55) 62%, rgba(255,90,40,0.28) 100%); }
+  .title-block { text-align: center; padding: 0 24px; }
+  .title-kicker { letter-spacing: 5px; font-size: 14px; color: #ffd23e; font-weight: bold; text-shadow: 0 2px 8px rgba(0,0,0,.8); }
+  .title-main { font-size: 118px; line-height: 0.9; margin: 14px 0 10px; font-weight: 900; letter-spacing: 2px;
+    background: linear-gradient(180deg, #fff6c9 0%, #ffd23e 38%, #ff2e88 78%, #c86bff 100%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    filter: drop-shadow(0 4px 22px rgba(255,46,136,0.55)); }
+  .title-sub { font-size: 17px; line-height: 1.5; opacity: 0.95; text-shadow: 0 2px 8px rgba(0,0,0,.9); }
+  .title-controls { margin-top: 18px; font-size: 12px; opacity: 0.8; line-height: 1.7; text-shadow: 0 1px 4px rgba(0,0,0,.9); }
+  .modal { background: rgba(10,12,28,0.92); border: 1px solid rgba(255,210,62,0.6); border-radius: 14px;
+    padding: 28px 32px; max-width: 560px; text-align: center; box-shadow: 0 10px 50px rgba(0,0,0,.7);
+    max-height: 96vh; overflow-y: auto; }
+  .modal.map-modal { padding: 20px 26px; }
+  .modal.wide { max-width: 680px; text-align: left; }
+  .modal.bad { border-color: rgba(255,59,48,0.8); }
+  .modal.good { border-color: rgba(124,252,0,0.8); }
+  .modal-kicker { letter-spacing: 3px; font-size: 12px; color: #ffd23e; font-weight: bold; }
+  .modal-title { font-size: 34px; margin: 8px 0 10px; }
+  .modal-text { font-size: 16px; line-height: 1.55; opacity: 0.95; }
+  .modal-payout { font-size: 22px; font-weight: bold; color: #7CFC00; margin: 12px 0 4px; }
+  .btn { pointer-events: auto; cursor: pointer; display: inline-block; margin: 10px 6px 0; padding: 12px 26px;
+    font-size: 16px; font-weight: bold; color: #fff; background: #1f6fb2; border: 2px solid rgba(255,255,255,0.35);
+    border-radius: 10px; }
+  .btn:hover { filter: brightness(1.2); }
+  .btn.big { background: linear-gradient(180deg, #ff2e88, #b3125e); font-size: 19px; padding: 15px 34px; }
+  .btn.ghost { background: transparent; }
+  .jobs-list { margin: 14px 0; }
+  .job-row { border-top: 1px solid rgba(255,255,255,0.18); padding: 10px 2px; font-size: 14px; line-height: 1.5; }
+  .job-row b { font-size: 15px; }
+  .job-row span { float: right; color: #ffd23e; font-weight: bold; }
+  .job-brief { color: #ddd !important; font-weight: normal !important; float: none !important; }
+  .briefing-head { display: flex; gap: 14px; align-items: center; justify-content: center; margin: 6px 0 2px; }
+  #briefing-portrait { border-radius: 10px; border: 2px solid rgba(255,210,62,0.7); flex: none; }
+  .modal-banner { font-size: 26px; font-weight: 900; letter-spacing: 2px; color: #7CFC00;
+    text-shadow: 0 0 18px rgba(124,252,0,0.6); margin-bottom: 6px; }
+  .modal-unlock { font-size: 15px; font-weight: bold; color: #ffd23e; margin: 10px 0 2px; }
+  .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 22px; text-align: left;
+    font-size: 14px; margin: 12px 0; line-height: 1.6; }
+  .stats-grid b { color: #ffd23e; }
+  .save-slots { margin-top: 14px; display: flex; gap: 10px; justify-content: center; }
+  .save-slot { pointer-events: auto; cursor: pointer; background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.35); border-radius: 8px; padding: 9px 16px; font-size: 13px;
+    color: #fff; min-width: 150px; }
+  .save-slot:hover { background: rgba(255,255,255,0.18); }
+  .save-slot b { display: block; font-size: 14px; color: #ffd23e; margin-bottom: 2px; }
+  .map-modal { max-width: 1060px; width: 94vw; }
+  .map-wrap { display: flex; gap: 16px; margin: 12px 0; align-items: flex-start; }
+  #bigmap { border-radius: 10px; border: 2px solid rgba(255,255,255,0.5); background: #0e6f8e; }
+  .map-side { text-align: left; font-size: 14px; line-height: 1.55; min-width: 300px; }
+  .map-complete { font-size: 22px; font-weight: bold; color: #7CFC00; margin-bottom: 8px; }
+  .map-story { font-size: 13px; }
+  .map-story div { padding: 2px 0; border-top: 1px solid rgba(255,255,255,0.14); }
+  .map-stats { margin-top: 10px; color: #ddd; font-size: 13px; line-height: 1.5; }
+  .map-legend { font-size: 13px; line-height: 1.6; }
+  .map-legend { margin-top: 12px; font-size: 13px; line-height: 1.8; }
+  .blip { font-size: 15px; }
+  .blip.yellow { color: #ffd23e; } .blip.blue { color: #4d9fff; } .blip.green { color: #7CFC00; }
+  .blip.pink { color: #ff2e88; } .blip.white { color: #ffffff; }
+  .shop-list { text-align: left; margin: 10px 0; }
+  .shop-row { display: flex; justify-content: space-between; align-items: center; gap: 12px;
+    border-top: 1px solid rgba(255,255,255,0.16); padding: 10px 2px; font-size: 14px; }
+  .shop-row b { font-size: 15px; }
+  .shop-row .desc { opacity: 0.85; font-size: 13px; }
+  .shop-buy { pointer-events: auto; cursor: pointer; background: #1f6fb2; color: #fff; font-weight: bold;
+    border: 1px solid rgba(255,255,255,0.4); border-radius: 8px; padding: 8px 16px; font-size: 14px; white-space: nowrap; }
+  .shop-buy:hover { filter: brightness(1.25); }
+  .shop-buy:disabled { opacity: 0.45; cursor: default; }
+  .respray-row { display: flex; gap: 8px; justify-content: center; margin: 12px 0 4px; flex-wrap: wrap; }
+  .swatch { pointer-events: auto; cursor: pointer; width: 34px; height: 34px; border-radius: 50%;
+    border: 3px solid rgba(255,255,255,0.6); }
+  .swatch:hover { transform: scale(1.15); }
   #status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 </style>
 </head>
 <body>
-<canvas id="game" aria-label="Neon Bay: an open-world crime game. Explore the city on foot and by car, steal vehicles, run missions for Vera Solano, and outrun the police."></canvas>
+<canvas id="game" aria-label="NEON BAY: an open-world crime game in Coral Bay. Drive, steal cars, outrun the police and run jobs for Vera Solano."></canvas>
+<div id="hud"></div>
 <p id="status" role="status" aria-live="polite"></p>
+<script src="./vendor/three.min.js"></script>
 <script type="module" src="./src/main.js"></script>
 </body>
 </html>

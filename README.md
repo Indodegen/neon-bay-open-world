@@ -1,62 +1,45 @@
-# NEON BAY — Coral Bay Open World
+# NEON BAY — Open World Crime
 
 [![make.fun · gta6-01](https://make.fun/badge/gta6-01.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
 [![rank](https://make.fun/badge/gta6-01/Indodegen/neon-bay-open-world/rank.svg)](https://make.fun/bounty/gta6-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
 [![reward](https://make.fun/badge/gta6-01/Indodegen/neon-bay-open-world/reward.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
+[![license](https://img.shields.io/badge/license-MIT-7dff9b)](./LICENSE)
 
-A complete 3D open-world crime game for the make.fun **gta6-01 "Make GTA 6"**
-bounty. An original sun-soaked coastal city, "Coral Bay": no GTA assets,
-names or story — everything here is original work.
+**NEON BAY** is an original open-world crime game set in Coral Bay, a sun-soaked coastal city of neon, palm trees and bad decisions. You are **Jax Marlow**, a wheelman fresh out of lockup, working for fixer **Rosa Vega**: steal fast cars, outrun the Coral Bay PD, and climb from street hustler to king of the bay.
+
+## What is in the game
+
+- **Open city** — a road-grid city with lit buildings, a neon avenue, Coral Tower, a harbor with cranes and containers, a beach boardwalk and the ocean, all under a sunset sky.
+- **On foot + driving** — run and sprint through the streets, or steal any parked car and drive it with arcade handling.
+- **Traffic & pedestrians** — cars cruise the grid, pedestrians stroll the sidewalks and flee when you speed past.
+- **Wanted level** — stealing cars and speeding raise your heat; Coral Bay PD cruisers chase, ram and try to bust you. Stay clean and the heat fades.
+- **3 story missions** — *First Wheels* (steal a car), *Bayfront Drop* (deliver to the beach while wanted), *Harbor Heist* (fight the guards, grab the cash). Each pays out and unlocks the next.
+- **Combat** — punch up close (F) or shoot with the mouse; harbor guards fight back.
+- **HUD + minimap** — health, cash, wanted stars, speed, mission objective, and a live 2D minimap with traffic, police and the mission marker.
+- **Menus & save** — start screen, pause, game-over screen, and progress saved to localStorage.
+- **Sound** — fully synthesized WebAudio: engine hum, two-tone police sirens, pickup chimes, gunshots. No audio files.
+- **Tech** — three.js (vendored as `game/vendor/three.module.min.js`), static files only, no build step, no network requests at runtime.
+
+## Controls
+
+| Key | Action |
+| --- | --- |
+| WASD / arrows | Move on foot / drive |
+| Shift | Sprint |
+| E | Steal car / exit car |
+| Mouse drag | Orbit camera |
+| Click | Shoot |
+| F | Punch |
+| Space | Handbrake |
+| P | Pause |
+| M | Mute |
 
 ## Play
 
-```sh
-node serve.ts        # http://localhost:8080
-```
+Serve `game/` with any static server (e.g. `node serve.ts`) and open `http://localhost:8080`.
 
-**Controls:** WASD drive / walk · Shift run · F enter/exit car · E interact ·
-LMB shoot / punch · Q switch weapon · R reload · Space brake · M map ·
-P pause · J side jobs · 1–4 radio · C camera · V weather.
-
-## What's inside
-
-- **World:** avenue/street grid city, lit-window facades + flickering neon
-  signs, beach + animated bay, bridge to an island, docks + pier, park with a
-  rotating ferris wheel, market stalls, streetlights, traffic signs,
-  street-name blades, cruising boats, bird flocks, palms, clouds, fog.
-- **Time & weather:** full day/night cycle (golden hour → neon night →
-  morning), rain + storm + lightning, wet roads, fog that closes in with rain.
-- **Vehicles:** 6 types (sedan, sports, truck, bike, boat, police cruiser)
-  with distinct handling, body roll + pitch, damage, smoke, crash damage and
-  car-vs-car shove.
-- **Police 0–5 stars:** named units (Unit 7 "Falcon"…) with PURSUIT / RAMMING /
-  BOXING IN / SEARCHLIGHT / ROADBLOCK statuses, foot cops (arrest on foot),
-  roadblocks + spike strips at 3★+, helicopter with searchlight at 4★+,
-  marine unit in boats, heat decay on clean driving.
-- **Missions:** 12 story missions for fixer Vera Solano ($400–$5,000) with
-  varied stage types, plus taxi / courier / street-race / stunt side jobs,
-  8 neon stashes, 3 properties, street-cash pickups, near-miss bonuses.
-- **Combat:** punch + pistol (tracers, muzzle flash, ammo/reload),
-  explosions with chain damage.
-- **HUD:** round minimap with blips, wanted stars, cash, weapon + ammo,
-  mission panel, clock + weather, named radio stations, police-unit list,
-  dialog with procedural portraits, notifications, speedo + vehicle condition,
-  HP + armor bars.
-- **Screens:** cinematic title, mission briefing, pause (stats), busted /
-  wasted, mission complete, jobs, full map (story list, stats, legend,
-  % complete), garage (upgrades + respray), gun shop, safehouse, 3 save slots
-  (localStorage), synthesized WebAudio SFX + synthwave radio.
-
-## Tech
-
-- three.js r186, vendored under `game/vendor/three.min.js` (no network).
-- Plain ES modules, no build step. Deterministic screenshots via
-  `?shot=cover|night|garage|map` (see `shots.json`). The night shot is
-  staged with the player parked inside a car: at 3★ a foot cop arrests an
-  on-foot player within seconds, which would put the BUSTED screen over it.
-  Screenshots are 1280×800 JPEGs, ≤256 KiB each.
-- `main.ts` packages `game/` + `screenshots/` into a dossier for the judge.
+Screenshots are staged deterministically with `?shot=1` (cover: driving + HUD + minimap + wanted stars + objective), `?shot=2` (on foot), `?shot=3` (police chase), `?shot=4` (harbor heist mission).
 
 ## License
 
-MIT — see `LICENSE`. three.js is vendored under its own MIT license.
+MIT — see [LICENSE](./LICENSE). All city, character, vehicle, story, art and sound names are original; nothing is taken from any commercial game.
